@@ -7,6 +7,10 @@
 
 **[DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) 的更新助手：追踪 dsh 本体、官方 bundle 和每个 profile 已装插件的版本状态 —— 先帮你决策，确认后才更新。**
 
+<p align="center">
+  <img src="assets/popup.png" width="480" alt="更新助手弹窗：核心包列表、落后项优先的插件行、已最新项折叠。" />
+</p>
+
 [English](README.md) | 中文
 
 ## 为什么做这个
@@ -23,7 +27,7 @@ DSH 迭代很快，插件生态同样如此。每个 profile 通过 pnpm spec �
 | 🔄 **双通道** | npm registry 版本（完整 semver 比较，含 prerelease）+ git 上游（pinned commit vs HEAD，`link:` 目录走只读 `ls-remote`） |
 | 🧭 **决策简报** | 逐项给出：semver 跨度、风险分级（major → 高、minor → 中、patch → 低）、变更材料——npm 版本列表 / GitHub compare 提交 / Release 说明 / 本地 `git log` |
 | 🤖 **Agent 工具** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update`——对 Agent 说一句「有没有更新」，得到有数据支撑的回答 |
-| 🖥 **Web 面板** | 设置 → 更新助手：核心版本卡片、逐插件版本行、内联简报、两步确认更新 |
+| 🖥 **Web 界面** | 设置按钮旁的侧栏入口（带懒加载徽章：首次打开弹窗后才显示落后插件数——不做后台轮询）打开紧凑雷达弹窗——落后项优先、已最新折叠；完整页面仍在 设置 → 更新助手，含内联简报与两步确认更新 |
 | 🛡 **更新护栏** | 同源 POST + 显式 `confirm`、严格目标 allowlist、单并发锁、5 分钟超时；拒绝 `link:`/`file:` 与官方 `@deepseek-ai/*` 包 |
 
 ## 安装
@@ -42,9 +46,9 @@ dsh plugin --profile web add github:hezhongtang/dsh-update-copilot
 
 Agent 会调用 `update_copilot_scan`，对每个落后项生成决策简报、先呈现风险，然后等你拍板。更新工具在没有 `confirm: true` 时直接拒绝执行。
 
-### 或者用面板
+### 或者用弹窗 / 面板
 
-**Settings → 更新助手** 展示：核心状态（附可复制的升级命令——只展示、绝不执行）、每个 profile 的插件当前 → 最新版本、内联决策简报、两步确认更新按钮。更新完成后的重启横幅会提醒你：插件更新需重启 `dsh` 生效。
+**设置旁的侧栏按钮**打开紧凑雷达弹窗（ESC 或点击遮罩关闭；URL 带 `?duc=1` 会自动打开一次——截图和测试很好用）。**设置 → 更新助手** 是完整页面：核心状态（附可复制的升级命令——只展示、绝不执行）、每个 profile 的插件当前 → 最新版本、内联决策简报、两步确认更新按钮。更新完成后的重启横幅会提醒你：插件更新需重启 `dsh` 生效。
 
 ### Agent 工具一览
 
