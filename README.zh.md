@@ -25,7 +25,7 @@ DSH 迭代很快，插件生态同样如此。每个 profile 通过 pnpm spec �
 |---|---|
 | 🔭 **全量雷达** | 一次扫描覆盖 dsh 本体 + 官方 bundle（`dsh-base`、`dsh-web-app`）+ 所有 profile 的插件依赖 |
 | 🔄 **双通道** | npm registry 版本（完整 semver 比较，含 prerelease）+ git 上游（pinned commit vs HEAD，`link:` 目录走只读 `ls-remote`） |
-| 🧭 **决策简报** | 逐项给出：semver 跨度、风险分级（major → 高、minor → 中、patch → 低）、变更材料——npm 版本列表 / GitHub compare 提交 / Release 说明 / 本地 `git log` |
+| 🧭 **决策简报** | 逐项给出：semver 跨度、风险分级（major → 高、minor → 中、patch → 低）、变更材料——npm 版本列表 / GitHub compare 提交 / Release 说明 / 本地 `git log`；每条材料都可点击跳转（npm 版本页、提交、Release、compare 对比页），每个插件行带 ↗ 直达其仓库 |
 | 🤖 **Agent 工具** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update`——对 Agent 说一句「有没有更新」，得到有数据支撑的回答 |
 | 🖥 **Web 界面** | 设置按钮旁的侧栏入口（带懒加载徽章：首次打开弹窗后才显示落后插件数——不做后台轮询；可在设置中关闭徽章，还你一个安静侧栏）打开紧凑雷达弹窗——落后项优先、已最新折叠；完整页面仍在 设置 → 更新助手，含内联简报与两步确认更新 |
 | 🛡 **更新护栏** | 同源 POST + 显式 `confirm`、严格目标 allowlist、单并发锁、5 分钟超时；拒绝 `link:`/`file:` 与官方 `@deepseek-ai/*` 包 |

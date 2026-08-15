@@ -51,6 +51,7 @@ const zh = {
   kindOther: '其他',
   current: '当前',
   latest: '最新',
+  repo: '仓库',
   upToDate: '已最新',
   behind: '可更新',
   brief: '决策简报',
@@ -98,6 +99,7 @@ const zh = {
   recUnknown: '无 semver 信号：阅读简报中的提交 / 发行说明后再决定。',
   noteRegistry: 'registry 暂不可达——无版本元数据',
   noteNoFetch: '本地未 fetch origin/HEAD——在仓库内执行 git fetch 后可见提交详情',
+  noteNoFetchCompare: '本地未 fetch origin/HEAD——提交列表需先 git fetch；GitHub 对比页可直接打开',
   noteCompareUnavailable: 'GitHub compare 不可用（限流或网络）——请手动打开对比页',
   errUpdateRunning: '已有更新在进行中，请稍候',
   errLinked: '本地链接插件请在它的仓库里自行更新（git pull）',
@@ -135,6 +137,7 @@ const en = {
   kindOther: 'other',
   current: 'current',
   latest: 'latest',
+  repo: 'Repository',
   upToDate: 'Up to date',
   behind: 'Update available',
   brief: 'Brief',
@@ -182,6 +185,7 @@ const en = {
   recUnknown: 'No semver signal: read the commits/release notes linked in the brief, then decide.',
   noteRegistry: 'registry unreachable — no version metadata',
   noteNoFetch: 'origin/HEAD not fetched locally — run git fetch in the checkout for commit details',
+  noteNoFetchCompare: 'origin/HEAD not fetched locally — the commit list needs a git fetch; the compare view on GitHub is always available',
   noteCompareUnavailable: 'GitHub compare unavailable (rate limit or network) — open the compare page manually',
   errUpdateRunning: 'Another update is already running — try again shortly',
   errLinked: 'Locally linked plugins update from their own checkout (git pull there)',
@@ -229,6 +233,11 @@ function injectStyles() {
     '.duc-brief b{font-weight:600}',
     '.duc-list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px}',
     '.duc-list a{color:inherit}',
+    '.duc a{color:inherit}',
+    '.duc-repolink{color:inherit;text-decoration:none;opacity:.55;font-size:12px;line-height:1;flex:none}',
+    '.duc-repolink:hover{opacity:1;text-decoration:underline}',
+    '.duc-chip.duc-repolink{text-decoration:none;opacity:.85}',
+    '.duc-chip.duc-repolink:hover{opacity:1;border-color:rgba(127,127,127,.9)}',
     '.duc-cmd{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;border:1px dashed rgba(127,127,127,.4);border-radius:6px;padding:6px 8px;word-break:break-all}',
     '.duc-banner{border:1px solid rgba(80,140,255,.45);background:rgba(80,140,255,.08);border-radius:8px;padding:8px 12px;font-size:12.5px}',
     '.duc-log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;word-break:break-all;border:1px solid rgba(127,127,127,.25);border-radius:6px;padding:8px;max-height:220px;overflow:auto;opacity:.85}',
@@ -448,6 +457,19 @@ function SemverSpan({ t, semver }) {
   return h('span', { className: 'duc-chip' }, parts.length > 0 ? parts.join(' · ') : '0')
 }
 
+/** Compact ↗ to the item's GitHub repo (rendered only when `repo` is known). */
+function RepoLink({ t, repo, className }) {
+  if (repo === null || repo === undefined || repo === '') return null
+  return h('a', {
+    className: className ?? 'duc-repolink',
+    href: `https://github.com/${repo}`,
+    target: '_blank',
+    rel: 'noreferrer',
+    title: `${t('repo')}: ${repo}`,
+    'aria-label': `${t('repo')}: ${repo}`,
+  }, '↗')
+}
+
 // Host briefs carry English prose (the agent path reads them directly); the
 // GUI re-synthesizes recommendation and notes from the structured fields so
 // the panel follows the UI language.
@@ -466,6 +488,7 @@ function localizedNote(t, note) {
   if (note === null || note === undefined) return null
   if (/^nothing to summarize/.test(note)) return null // redundant with recCurrent
   if (/^registry unreachable/.test(note)) return t('noteRegistry')
+  if (/origin\/HEAD not fetched locally — the commit list/.test(note)) return t('noteNoFetchCompare')
   if (/origin\/HEAD not fetched/.test(note)) return t('noteNoFetch')
   if (/GitHub compare unavailable/.test(note)) return t('noteCompareUnavailable')
   return note // unknown notes stay verbatim rather than silently dropped
@@ -507,9 +530,16 @@ function BriefPanel({ t, profile, name }) {
   const m = brief.material ?? {}
   const listItems = []
   if (Array.isArray(m.versions) && m.versions.length > 0) {
+    const items = []
+    m.versions.forEach((v, i) => {
+      if (i > 0) items.push(' ← ')
+      items.push(v.url !== undefined && v.url !== null
+        ? h('a', { key: `v${i}`, href: v.url, target: '_blank', rel: 'noreferrer' }, v.version)
+        : v.version)
+    })
     listItems.push(h('li', { key: 'v' },
       h('b', null, `${t('versions')}: `),
-      m.versions.map((v) => v.version).join(' ← ')))
+      items))
   }
   if (Array.isArray(m.commits) && m.commits.length > 0) {
     listItems.push(h('li', { key: 'c' },
@@ -532,7 +562,13 @@ function BriefPanel({ t, profile, name }) {
   }
 
   return h('div', { className: 'duc-brief' },
-    h('div', null, h(RiskChip, { t, level: brief.risk.level }), ' ', h(SemverSpan, { t, semver: brief.semver })),
+    h('div', null,
+      h(RiskChip, { t, level: brief.risk.level }), ' ', h(SemverSpan, { t, semver: brief.semver }),
+      brief.repoUrl !== null && brief.repoUrl !== undefined
+        ? h(React.Fragment, null, ' ',
+            h('a', { className: 'duc-chip duc-repolink', href: brief.repoUrl, target: '_blank', rel: 'noreferrer' },
+              `${t('repo')} ↗`))
+        : null),
     h('div', null, h('b', null, `${t('recommendation')}: `), localizedRecommendation(t, brief)),
     localizedNote(t, m.note) !== null ? h('div', { className: 'duc-note' }, localizedNote(t, m.note)) : null,
     listItems.length > 0
@@ -540,8 +576,12 @@ function BriefPanel({ t, profile, name }) {
       : h('div', { className: 'duc-note' }, t('noMaterial')))
 }
 
+// Visual-test hook: set once by the `&brief=1` URL parameter — behind rows
+// then start with their decision brief already expanded (screenshot-visible).
+let autoBrief = false
+
 function PluginRow({ t, profile, row, onUpdated }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(autoBrief && row.updateAvailable === true)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
@@ -571,6 +611,7 @@ function PluginRow({ t, profile, row, onUpdated }) {
   return h('div', null,
     h('div', { className: 'duc-row' },
       h('span', { className: 'duc-name' }, row.name),
+      h(RepoLink, { t, repo: row.repo }),
       h(KindChip, { t, kind: row.kind }),
       h('span', { className: 'duc-ver' },
         h('span', { title: t('current') }, shortVer(row.current)),
@@ -610,6 +651,7 @@ function CoreCard({ t, core }) {
     h('div', { className: 'duc-card-title' }, t('coreTitle')),
     core.packages.map((p) => h('div', { className: 'duc-row', key: p.name },
       h('span', { className: 'duc-name' }, p.name),
+      h(RepoLink, { t, repo: p.repo }),
       h('span', { className: 'duc-chip' }, p.kind),
       h('span', { className: 'duc-ver' }, shortVer(p.current),
         p.updateAvailable ? h('span', { className: 'duc-arrow' }, ' → ') : null,
@@ -834,10 +876,14 @@ exports.apply = function apply(ctx) {
   // (`&hide=1` arms it with the badge suppressed); `?duc=settings` clicks the
   // shipped settings trigger once the sidebar is up and then selects our nav
   // row, so the section page (pref row included) is screenshot-visible.
+  // Appending `&brief=1` to `?duc=1` or `?duc=settings` starts every behind
+  // row with its decision brief expanded, so brief-panel changes are
+  // screenshot-visible too.
   ctx.effect(() => {
     try {
       const params = new URLSearchParams(window.location.search)
       const mode = params.get('duc')
+      if (params.get('brief') === '1') autoBrief = true
       if (mode === '1') {
         setUi({ open: true, everOpened: true })
       } else if (mode === 'badge') {
