@@ -1,0 +1,6 @@
+# dsh-update-copilot bundle patch: mounts the update copilot into a profile
+# layer stack. Runtime behavior needs no config rows; overrides may target this
+# id from the profile's own patch file.
+- insert:
+    - id: dsh-update-copilot
+      name: 'dsh-update-copilot'
