@@ -87,6 +87,26 @@ const zh = {
   badgeTitle: '{n} 个插件可更新',
   hideBadge: '隐藏更新红点',
   hideBadgeDesc: '关闭侧栏按钮上的「可更新数量」徽章；弹窗与本页仍会显示完整信息',
+  semverMajor: '主版本 ×{n}',
+  semverMinor: '次版本 ×{n}',
+  semverPatch: '补丁 ×{n}',
+  recCurrent: '已是最新，无需操作。',
+  recLow: '可以放心更新：仅补丁级修复。',
+  recMedium: '通常可以更新；建议先浏览发行说明确认行为变化。',
+  recHigh: '建议暂缓：大版本跳跃，先读迁移说明与 dsh 兼容范围再决定。',
+  recLinked: '请在本地仓库查看列出的提交，然后自行 git pull。',
+  recUnknown: '无 semver 信号：阅读简报中的提交 / 发行说明后再决定。',
+  noteRegistry: 'registry 暂不可达——无版本元数据',
+  noteNoFetch: '本地未 fetch origin/HEAD——在仓库内执行 git fetch 后可见提交详情',
+  noteCompareUnavailable: 'GitHub compare 不可用（限流或网络）——请手动打开对比页',
+  errUpdateRunning: '已有更新在进行中，请稍候',
+  errLinked: '本地链接插件请在它的仓库里自行更新（git pull）',
+  errOfficial: '官方包随 dsh 本体升级，此处不执行',
+  errNotInstalled: '该插件未安装在此 profile',
+  errUnsafe: '目标被安全策略拒绝',
+  errConfirm: '需要先获得你的确认',
+  errFailed: '更新失败',
+  errTimeout: '更新超时',
 }
 
 const en = {
@@ -151,6 +171,26 @@ const en = {
   badgeTitle: '{n} plugin update(s) available',
   hideBadge: 'Hide update badge',
   hideBadgeDesc: 'Turn off the update-count badge on the sidebar button; the popup and this page keep full details',
+  semverMajor: 'major ×{n}',
+  semverMinor: 'minor ×{n}',
+  semverPatch: 'patch ×{n}',
+  recCurrent: 'Already current — nothing to do.',
+  recLow: 'Safe to update: patch-level fixes only.',
+  recMedium: 'Usually safe to update; skim the release notes for behavior changes first.',
+  recHigh: 'Hold: major version jump. Read the migration notes, check dsh peer ranges, then decide.',
+  recLinked: 'Review the listed commits in your checkout, then git pull there yourself.',
+  recUnknown: 'No semver signal: read the commits/release notes linked in the brief, then decide.',
+  noteRegistry: 'registry unreachable — no version metadata',
+  noteNoFetch: 'origin/HEAD not fetched locally — run git fetch in the checkout for commit details',
+  noteCompareUnavailable: 'GitHub compare unavailable (rate limit or network) — open the compare page manually',
+  errUpdateRunning: 'Another update is already running — try again shortly',
+  errLinked: 'Locally linked plugins update from their own checkout (git pull there)',
+  errOfficial: 'Official packages follow the dsh core — update dsh itself',
+  errNotInstalled: 'Plugin is not installed in this profile',
+  errUnsafe: 'Target rejected by the safety policy',
+  errConfirm: 'Your explicit confirmation is required first',
+  errFailed: 'Update failed',
+  errTimeout: 'Update timed out',
 }
 
 function injectStyles() {
@@ -399,13 +439,54 @@ function RiskChip({ t, level }) {
   return h('span', { className: `duc-badge ${level}` }, `${t('risk')}: ${t(map[level] ?? 'riskUnknown')}`)
 }
 
-function SemverSpan({ semver }) {
+function SemverSpan({ t, semver }) {
   if (semver === null || semver === undefined) return null
   const parts = []
-  if (semver.major > 0) parts.push(`major ×${semver.major}`)
-  if (semver.minor > 0) parts.push(`minor ×${semver.minor}`)
-  if (semver.patch > 0) parts.push(`patch ×${semver.patch}`)
+  if (semver.major > 0) parts.push(t('semverMajor', { n: semver.major }))
+  if (semver.minor > 0) parts.push(t('semverMinor', { n: semver.minor }))
+  if (semver.patch > 0) parts.push(t('semverPatch', { n: semver.patch }))
   return h('span', { className: 'duc-chip' }, parts.length > 0 ? parts.join(' · ') : '0')
+}
+
+// Host briefs carry English prose (the agent path reads them directly); the
+// GUI re-synthesizes recommendation and notes from the structured fields so
+// the panel follows the UI language.
+
+function localizedRecommendation(t, brief) {
+  if (brief.updateAvailable !== true) return t('recCurrent')
+  if (brief.kind === 'linked') return t('recLinked')
+  const level = brief.risk?.level
+  if (level === 'low') return t('recLow')
+  if (level === 'medium') return t('recMedium')
+  if (level === 'high') return t('recHigh')
+  return t('recUnknown')
+}
+
+function localizedNote(t, note) {
+  if (note === null || note === undefined) return null
+  if (/^nothing to summarize/.test(note)) return null // redundant with recCurrent
+  if (/^registry unreachable/.test(note)) return t('noteRegistry')
+  if (/origin\/HEAD not fetched/.test(note)) return t('noteNoFetch')
+  if (/GitHub compare unavailable/.test(note)) return t('noteCompareUnavailable')
+  return note // unknown notes stay verbatim rather than silently dropped
+}
+
+const ERROR_CODE_KEYS = {
+  update_running: 'errUpdateRunning',
+  linked_install: 'errLinked',
+  official_package: 'errOfficial',
+  not_installed: 'errNotInstalled',
+  unsafe_target: 'errUnsafe',
+  invalid_profile: 'errUnsafe',
+  confirm_required: 'errConfirm',
+  update_failed: 'errFailed',
+  update_timeout: 'errTimeout',
+}
+
+function localizedUpdateError(t, result) {
+  const key = ERROR_CODE_KEYS[result?.code ?? '']
+  if (key !== undefined) return t(key)
+  return `${t('errFailed')}: ${result?.error ?? ''}`
 }
 
 function BriefPanel({ t, profile, name }) {
@@ -451,9 +532,9 @@ function BriefPanel({ t, profile, name }) {
   }
 
   return h('div', { className: 'duc-brief' },
-    h('div', null, h(RiskChip, { t, level: brief.risk.level }), ' ', h(SemverSpan, { semver: brief.semver })),
-    h('div', null, h('b', null, `${t('recommendation')}: `), brief.recommendation),
-    m.note !== null && m.note !== undefined ? h('div', { className: 'duc-note' }, m.note) : null,
+    h('div', null, h(RiskChip, { t, level: brief.risk.level }), ' ', h(SemverSpan, { t, semver: brief.semver })),
+    h('div', null, h('b', null, `${t('recommendation')}: `), localizedRecommendation(t, brief)),
+    localizedNote(t, m.note) !== null ? h('div', { className: 'duc-note' }, localizedNote(t, m.note)) : null,
     listItems.length > 0
       ? h('ul', { className: 'duc-list' }, listItems)
       : h('div', { className: 'duc-note' }, t('noMaterial')))
@@ -513,7 +594,7 @@ function PluginRow({ t, profile, row, onUpdated }) {
       className: `duc-note ${result.ok ? '' : 'duc-error'}`,
     }, result.ok
       ? (result.changed ? `${t('updated')}` : t('updateNoChange'))
-      : `${t('updateFail')}: ${result.error ?? ''}`) : null,
+      : localizedUpdateError(t, result)) : null,
     open ? h(BriefPanel, { t, profile, name: row.name }) : null)
 }
 
