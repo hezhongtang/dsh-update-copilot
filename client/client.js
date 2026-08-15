@@ -110,6 +110,9 @@ const zh = {
   errConfirm: '需要先获得你的确认',
   errFailed: '更新失败',
   errTimeout: '更新超时',
+  errNoop: 'pnpm 跑完了，但本地没有变化；请重新扫描后再试，如果一直这样，把下方输出发来排查。',
+  errLatestUnavailable: '拿不到 npm 上的最新版本，稍后再试。',
+  errUnsupportedChannel: '这种安装方式暂不支持自动更新。',
 }
 
 const en = {
@@ -197,6 +200,9 @@ const en = {
   errConfirm: 'Your explicit confirmation is required first',
   errFailed: 'Update failed',
   errTimeout: 'Update timed out',
+  errNoop: 'pnpm finished but nothing changed. Re-scan and retry; if it persists, share the output below for debugging.',
+  errLatestUnavailable: 'Could not resolve the latest version from npm. Try again shortly.',
+  errUnsupportedChannel: 'This install channel is not auto-updatable yet.',
 }
 
 function injectStyles() {
@@ -550,6 +556,9 @@ const ERROR_CODE_KEYS = {
   confirm_required: 'errConfirm',
   update_failed: 'errFailed',
   update_timeout: 'errTimeout',
+  update_noop: 'errNoop',
+  latest_unavailable: 'errLatestUnavailable',
+  unsupported_channel: 'errUnsupportedChannel',
 }
 
 function localizedUpdateError(t, result) {
