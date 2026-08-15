@@ -85,6 +85,8 @@ const zh = {
   scanSummary: '{p} 个插件 · {b} 个可更新',
   upToDateFold: '{n} 项已最新',
   badgeTitle: '{n} 个插件可更新',
+  hideBadge: '隐藏更新红点',
+  hideBadgeDesc: '关闭侧栏按钮上的「可更新数量」徽章；弹窗与本页仍会显示完整信息',
 }
 
 const en = {
@@ -147,6 +149,8 @@ const en = {
   scanSummary: '{p} plugin(s) · {b} update(s) available',
   upToDateFold: '{n} up to date',
   badgeTitle: '{n} plugin update(s) available',
+  hideBadge: 'Hide update badge',
+  hideBadgeDesc: 'Turn off the update-count badge on the sidebar button; the popup and this page keep full details',
 }
 
 function injectStyles() {
@@ -191,6 +195,9 @@ function injectStyles() {
     '.duc-error{color:#c25050}',
     '.duc-fold{border:none;background:transparent;color:inherit;font-size:12px;opacity:.7;cursor:pointer;padding:4px 0 0;text-align:left}',
     '.duc-fold:hover{opacity:1}',
+    '.duc-pref{display:flex;align-items:flex-start;gap:10px;cursor:pointer}',
+    '.duc-pref input[type="checkbox"]{margin:3px 0 0;flex:none;width:15px;height:15px;accent-color:var(--dsw-alias-brand-primary,#508cff);cursor:pointer}',
+    '.duc-pref-body{display:flex;flex-direction:column;gap:2px;min-width:0}',
     // sidebar footer trigger — geometry copied from the shipped settings
     // trigger (ui-settings-general .VOzbGW_trigger) so both rows share one
     // grid: 14px/22px text, 34px tall, -4px bleed with a 10px text inset.
@@ -302,12 +309,35 @@ function mountSettingsNavIconPatch() {
 // useSyncExternalStore contract: immutable snapshots, notify on replace.
 // ---------------------------------------------------------------------------
 
-let uiState = { open: false, everOpened: false, summary: null, generatedAt: null }
+/** Badge preference, per browser (localStorage — remote browsers keep it too). */
+const BADGE_PREF_KEY = 'duc.hideBadge'
+
+function readBadgePref() {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(BADGE_PREF_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeBadgePref(hidden) {
+  try {
+    localStorage.setItem(BADGE_PREF_KEY, hidden ? '1' : '0')
+  } catch { /* storage unavailable — in-memory only */ }
+}
+
+let uiState = { open: false, everOpened: false, summary: null, generatedAt: null, hideBadge: readBadgePref() }
 const uiSubs = new Set()
 
 function setUi(patch) {
   uiState = { ...uiState, ...patch }
   for (const notify of uiSubs) notify()
+}
+
+/** Toggle the sidebar badge; persists across sessions per browser. */
+function setHideBadge(hidden) {
+  writeBadgePref(hidden)
+  setUi({ hideBadge: hidden })
 }
 
 function subscribeUi(notify) {
@@ -555,6 +585,20 @@ function LogTail({ t, opsVersion }) {
 // Seat 1: the Settings section (full page).
 // ---------------------------------------------------------------------------
 
+/** The badge visibility preference row for the settings page. */
+function BadgePrefRow({ t }) {
+  const ui = useUi()
+  return h('label', { className: 'duc-pref' },
+    h('input', {
+      type: 'checkbox',
+      checked: ui.hideBadge === true,
+      onChange: (e) => setHideBadge(e.target.checked),
+    }),
+    h('span', { className: 'duc-pref-body' },
+      h('span', { style: { fontWeight: 500 } }, t('hideBadge')),
+      h('span', { className: 'duc-note' }, t('hideBadgeDesc'))))
+}
+
 function CopilotSection({ t }) {
   const { status, error, busy, load, needRestart, opsVersion, notifyUpdated } = useCopilotData(true)
 
@@ -572,6 +616,7 @@ function CopilotSection({ t }) {
       h('button', { className: 'duc-btn', onClick: () => load(false) }, t('retry'))) : null,
     needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
     status === null && error === null ? h('div', { className: 'duc-note' }, t('loading')) : null,
+    h('div', { className: 'duc-card', style: { padding: '10px 12px' } }, h(BadgePrefRow, { t })),
     status !== null ? h(CoreCard, { t, core: status.core }) : null,
     status !== null
       ? status.profiles.map((p) => h(ProfileCard, {
@@ -589,17 +634,18 @@ function FooterButton({ t, wide }) {
   const ui = useUi()
   useEffect(() => { injectStyles() }, [])
   const behind = ui.summary !== null ? ui.summary.behindPlugins : 0
+  const showBadge = ui.everOpened && behind > 0 && ui.hideBadge !== true
 
   return h('button', {
     className: wide === true ? 'duc-foot-btn' : 'duc-foot-btn duc-rail',
-    title: behind > 0 && ui.everOpened ? t('badgeTitle', { n: behind }) : t('nav'),
+    title: showBadge ? t('badgeTitle', { n: behind }) : t('nav'),
     'aria-label': t('nav'),
     'aria-haspopup': 'dialog',
     onClick: () => setUi({ open: true, everOpened: true }),
   },
     h('span', { className: 'duc-foot-icon' }, RadarIcon()),
     wide === true ? h('span', { className: 'duc-foot-label' }, t('nav')) : null,
-    ui.everOpened && behind > 0
+    showBadge
       ? h('span', { className: 'duc-foot-badge' }, String(behind))
       : null)
 }
@@ -703,31 +749,45 @@ exports.apply = function apply(ctx) {
 
   // Visual-test hooks: `?duc=1` auto-opens the popup once (also arms the
   // badge); `?duc=badge` arms the badge only — no popup, no backdrop, so a
-  // screenshot can judge the badge/text alignment on the sidebar itself;
-  // `?duc=settings` clicks the shipped settings trigger once the sidebar is
-  // up, so the settings nav (and the icon patch) is screenshot-visible.
+  // screenshot can judge the badge/text alignment on the sidebar itself
+  // (`&hide=1` arms it with the badge suppressed); `?duc=settings` clicks the
+  // shipped settings trigger once the sidebar is up and then selects our nav
+  // row, so the section page (pref row included) is screenshot-visible.
   ctx.effect(() => {
     try {
-      const mode = new URLSearchParams(window.location.search).get('duc')
+      const params = new URLSearchParams(window.location.search)
+      const mode = params.get('duc')
       if (mode === '1') {
         setUi({ open: true, everOpened: true })
       } else if (mode === 'badge') {
-        setUi({ everOpened: true })
+        setUi({ everOpened: true, ...(params.get('hide') === '1' ? { hideBadge: true } : {}) })
         fetch('/dsh-update-copilot/status', { cache: 'no-store' })
           .then((res) => res.json())
           .then((data) => setUi({ summary: data.summary, generatedAt: data.generatedAt }))
           .catch(() => {})
       } else if (mode === 'settings') {
         let tries = 0
+        let selectedUs = false
         const timer = setInterval(() => {
           tries += 1
-          const trigger = document.querySelector('button[aria-haspopup="dialog"]:not(.duc-foot-btn)')
-          if (trigger !== null) {
-            trigger.click()
-            clearInterval(timer)
-          } else if (tries > 40) {
-            clearInterval(timer)
+          if (!selectedUs) {
+            const trigger = document.querySelector('button[aria-haspopup="dialog"]:not(.duc-foot-btn)')
+            if (trigger !== null) {
+              trigger.click()
+              selectedUs = true
+            }
+          } else {
+            const navBtns = document.querySelectorAll('div[role="dialog"][aria-modal="true"]:not(.duc-modal) nav button')
+            let ours = null
+            for (const btn of navBtns) {
+              if (NAV_LABELS.includes((btn.textContent ?? '').trim())) { ours = btn; break }
+            }
+            if (ours !== null) {
+              ours.click()
+              clearInterval(timer)
+            }
           }
+          if (tries > 40) clearInterval(timer)
         }, 250)
         return () => clearInterval(timer)
       }
