@@ -288,6 +288,23 @@ function shortVer(v) {
   return s.length === 40 ? s.slice(0, 7) : s
 }
 
+// The wire format is ISO-8601 UTC (toISOString on the host); render through
+// Date so every clock and date shown follows the browser's local timezone
+// instead of a raw UTC slice (which read 8 hours early on UTC+8).
+function fmtClock(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  const p = (n) => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
+function fmtDate(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
 // ---------------------------------------------------------------------------
 // Settings nav icon patch.
 //
@@ -554,7 +571,7 @@ function BriefPanel({ t, profile, name }) {
       h('ul', { className: 'duc-list' },
         m.releases.slice(0, 3).map((r, i) => h('li', { key: i },
           h('a', { href: r.url, target: '_blank', rel: 'noreferrer' }, r.name ?? r.tag),
-          r.publishedAt !== undefined ? ` (${String(r.publishedAt).slice(0, 10)})` : '')))))
+          r.publishedAt !== undefined ? ` (${fmtDate(r.publishedAt)})` : '')))))
   }
   if (m.compareUrl !== null && m.compareUrl !== undefined) {
     listItems.push(h('li', { key: 'u' },
@@ -701,7 +718,7 @@ function LogTail({ t, opsVersion }) {
     lines.length === 0
       ? h('div', { className: 'duc-note' }, t('empty'))
       : h('div', { className: 'duc-log' },
-        lines.map((op, i) => `${op.at.slice(11, 19)} [${op.level}] ${op.event} ${op.detail}`).join('\n')))
+        lines.map((op, i) => `${fmtClock(op.at)} [${op.level}] ${op.event} ${op.detail}`).join('\n')))
 }
 
 // ---------------------------------------------------------------------------
@@ -732,7 +749,7 @@ function CopilotSection({ t }) {
       h('h2', null, t('nav')),
       h('span', { className: 'duc-sub' }, t('subtitle')),
       status !== null ? h('span', { className: 'duc-meta' },
-        `${t('lastScan')}: ${String(status.generatedAt).slice(11, 19)}`,
+        `${t('lastScan')}: ${fmtClock(status.generatedAt)}`,
         h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
           busy ? t('rescanning') : t('refresh'))) : null),
     error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error} `,
@@ -784,7 +801,7 @@ function PopupBody({ t }) {
     h('div', { className: 'duc-toolbar' },
       status !== null
         ? h(React.Fragment, null,
-            `${t('lastScan')}: ${String(status.generatedAt).slice(11, 19)}`,
+            `${t('lastScan')}: ${fmtClock(status.generatedAt)}`,
             h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
               busy ? t('rescanning') : t('refresh')))
         : null),
