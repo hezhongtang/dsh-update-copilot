@@ -7,6 +7,10 @@
 
 **An update copilot for [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh): tracks the dsh core, shipped bundles, and every installed profile plugin — then helps you decide, and only then updates.**
 
+<p align="center">
+  <img src="assets/popup.png" width="480" alt="The Update Copilot popup: core packages, per-plugin rows behind-first, up-to-date rows folded away." />
+</p>
+
 English | [中文](README.zh.md)
 
 ## Why this exists
@@ -23,7 +27,7 @@ This plugin takes the middle path: **detect everything, summarize what changed, 
 | 🔄 **Dual channel** | npm registry versions (full semver compare, prerelease-aware) and git upstreams (pinned-commit vs HEAD, `link:` checkouts via read-only `ls-remote`) |
 | 🧭 **Decision briefs** | Per-item: semver distance, risk level (major → high, minor → medium, patch → low), changelog material — npm versions between yours and latest, GitHub compare commits, release notes, or local `git log` |
 | 🤖 **Agent tools** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update` — ask your agent *"any updates?"* and get an honest, data-backed answer |
-| 🖥 **Web panel** | Settings → Update Copilot: core card, per-plugin rows, inline briefs, two-step confirm updates |
+| 🖥 **Web surfaces** | A sidebar trigger beside Settings (with a lazy badge: the behind-plugin count appears only after the first popup open — no background polling) opens a compact popup — behind rows first, up-to-date rows folded; the full page lives on in Settings → Update Copilot with inline briefs and two-step confirm updates |
 | 🛡 **Update guardrails** | Same-origin POST + explicit `confirm`, strict target allowlist, single-flight lock, 5-minute timeout; `link:`/`file:` and official `@deepseek-ai/*` installs are refused |
 
 ## Install
@@ -42,9 +46,9 @@ Restart `dsh web`, then open **Settings → Update Copilot**. Works the same in 
 
 The agent runs `update_copilot_scan`, then builds a brief for each outdated item and presents the risk before doing anything. Updates run only after you say yes — the update tool rejects calls without `confirm: true`.
 
-### Or use the panel
+### Or use the popup / panel
 
-**Settings → Update Copilot** shows the core status (with a copyable upgrade command — never executed), every profile's plugins with current → latest versions, inline decision briefs, and a two-step confirm button per update. A restart banner reminds you that plugin updates apply after the next `dsh` restart.
+The **sidebar button beside Settings** opens the compact radar popup (ESC or backdrop click closes; `?duc=1` in the URL opens it once — handy for screenshots and tests). **Settings → Update Copilot** is the full page: core status (with a copyable upgrade command — never executed), every profile's plugins with current → latest versions, inline decision briefs, and a two-step confirm button per update. A restart banner reminds you that plugin updates apply after the next `dsh` restart.
 
 ### Agent tool reference
 

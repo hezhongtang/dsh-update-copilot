@@ -3,16 +3,25 @@ var module = { exports: {} }; var exports = module.exports;
 'use strict'
 
 /**
- * dsh-update-copilot client: a Settings section that shows the update status of
- * the DSH core, bundle packages, and every profile plugin. Per-item decision
- * briefs (risk, semver distance, changelog material) expand inline; updates run
- * only after a two-step confirm and report the restart requirement.
+ * dsh-update-copilot client.
+ *
+ * Three seats:
+ *  - Settings section: the full update radar page (core + every profile's
+ *    plugins, inline decision briefs, two-step confirm updates, op log).
+ *  - sidebar.footer.action: a trigger beside the Settings button. Lazy badge:
+ *    the behind-plugin count appears only after the popup has been opened at
+ *    least once this session — no background polling, upstream APIs are only
+ *    touched on user action.
+ *  - shell.overlay: a modal popup with the compact radar — behind rows first,
+ *    up-to-date rows folded away; same two-step confirm updates. Opened via
+ *    the sidebar button or the `?duc=1` URL parameter (visual-test hook).
+ *
  * Hand-authored CJS bundle (no build step); the only external is `react`.
  */
 
 const React = require('react')
 const h = React.createElement
-const { useState, useEffect, useCallback } = React
+const { useState, useEffect, useCallback, useRef, useSyncExternalStore } = React
 
 const NS = 'dsh-update-copilot'
 
@@ -25,6 +34,7 @@ const zh = {
   loading: '加载中…',
   loadFail: '加载失败，请重试',
   retry: '重试',
+  close: '关闭',
   coreTitle: 'DSH 本体与官方 bundle',
   corePolicy: '本体更新由 npm 管理，这里只报告、不执行',
   coreCurrent: '已是最新',
@@ -65,7 +75,7 @@ const zh = {
   releases: '发行说明',
   compare: '对比链接',
   aheadBy: '落后',
-  'commitsUnit': '个提交',
+  commitsUnit: '个提交',
   noMaterial: '暂无变更详情（可能网络受限或已是最新）',
   officialNote: '官方包随 dsh 本体更新',
   linkedNote: '本地开发链接，请在其仓库内 git pull',
@@ -73,6 +83,8 @@ const zh = {
   logsCollapse: '收起日志',
   empty: '还没有任何记录',
   scanSummary: '{p} 个插件 · {b} 个可更新',
+  upToDateFold: '{n} 项已最新',
+  badgeTitle: '{n} 个插件可更新',
 }
 
 const en = {
@@ -84,6 +96,7 @@ const en = {
   loading: 'Loading…',
   loadFail: 'Failed to load, please retry',
   retry: 'Retry',
+  close: 'Close',
   coreTitle: 'DSH core & official bundles',
   corePolicy: 'Core updates are npm-managed — reported here, never executed',
   coreCurrent: 'Up to date',
@@ -132,6 +145,8 @@ const en = {
   logsCollapse: 'Collapse log',
   empty: 'Nothing recorded yet',
   scanSummary: '{p} plugin(s) · {b} update(s) available',
+  upToDateFold: '{n} up to date',
+  badgeTitle: '{n} plugin update(s) available',
 }
 
 function injectStyles() {
@@ -174,6 +189,25 @@ function injectStyles() {
     '.duc-banner{border:1px solid rgba(80,140,255,.45);background:rgba(80,140,255,.08);border-radius:8px;padding:8px 12px;font-size:12.5px}',
     '.duc-log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;word-break:break-all;border:1px solid rgba(127,127,127,.25);border-radius:6px;padding:8px;max-height:220px;overflow:auto;opacity:.85}',
     '.duc-error{color:#c25050}',
+    '.duc-fold{border:none;background:transparent;color:inherit;font-size:12px;opacity:.7;cursor:pointer;padding:4px 0 0;text-align:left}',
+    '.duc-fold:hover{opacity:1}',
+    // sidebar footer trigger + badge
+    '.duc-foot-btn{position:relative;display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:7px 10px;border:none;background:transparent;color:var(--dsw-alias-label-secondary,#888);font-size:13px;font-family:inherit;border-radius:8px;cursor:pointer}',
+    '.duc-foot-btn:hover{background:rgba(127,127,127,.12);color:var(--dsw-alias-label-primary,inherit)}',
+    '.duc-foot-btn:focus-visible{outline:1px solid var(--dsw-alias-border-l2,#888);outline-offset:-1px}',
+    '.duc-foot-icon{display:inline-flex;flex:none;align-items:center}',
+    '.duc-foot-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.duc-foot-badge{position:absolute;top:2px;right:6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--dsw-alias-state-error-primary,#d25050);color:#fff;font-size:10px;line-height:16px;text-align:center;font-variant-numeric:tabular-nums;pointer-events:none}',
+    // modal popup
+    '.duc-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:24px}',
+    '.duc-modal{background:var(--dsw-alias-bg-overlay,#fff);color:var(--dsw-alias-label-primary,inherit);border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.4));border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.25);width:min(680px,100%);max-height:min(82vh,780px);display:flex;flex-direction:column;outline:none}',
+    '.duc-modal-head{display:flex;align-items:flex-start;gap:12px;padding:14px 16px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.25))}',
+    '.duc-modal-head h2{margin:0;font-size:15px;font-weight:600}',
+    '.duc-modal-head .duc-sub{margin-top:2px}',
+    '.duc-modal-x{margin-left:auto;flex:none;border:none;background:transparent;color:inherit;font-size:14px;line-height:1;cursor:pointer;opacity:.6;padding:5px 7px;border-radius:6px}',
+    '.duc-modal-x:hover{opacity:1;background:rgba(127,127,127,.15)}',
+    '.duc-modal-body{padding:12px 16px 16px;overflow:auto;display:flex;flex-direction:column;gap:12px}',
+    '.duc-toolbar{display:flex;align-items:center;gap:8px;font-size:12px;opacity:.75}',
   ].join('\n')
   document.head.appendChild(style)
 }
@@ -189,6 +223,69 @@ function shortVer(v) {
   if (v === null || v === undefined) return '—'
   const s = String(v)
   return s.length === 40 ? s.slice(0, 7) : s
+}
+
+// ---------------------------------------------------------------------------
+// Shared cross-seat UI state: popup open flag + the lazy badge summary.
+// useSyncExternalStore contract: immutable snapshots, notify on replace.
+// ---------------------------------------------------------------------------
+
+let uiState = { open: false, everOpened: false, summary: null, generatedAt: null }
+const uiSubs = new Set()
+
+function setUi(patch) {
+  uiState = { ...uiState, ...patch }
+  for (const notify of uiSubs) notify()
+}
+
+function subscribeUi(notify) {
+  uiSubs.add(notify)
+  return () => uiSubs.delete(notify)
+}
+
+function useUi() {
+  // Third arg = getServerSnapshot: identical to the client snapshot, which
+  // keeps the component server-renderable (harmless in the browser).
+  return useSyncExternalStore(subscribeUi, () => uiState, () => uiState)
+}
+
+/** One scan-data owner shared by the settings page and the popup. */
+function useCopilotData(active) {
+  const [status, setStatus] = useState(null)
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [needRestart, setNeedRestart] = useState(false)
+  const [opsVersion, setOpsVersion] = useState(0)
+
+  const load = useCallback((force) => {
+    setBusy(true)
+    setError(null)
+    api(`/dsh-update-copilot/status${force ? '?force=1' : ''}`)
+      .then((data) => {
+        setStatus(data)
+        setUi({ summary: data.summary, generatedAt: data.generatedAt })
+      })
+      .catch((e) => setError(String(e.message ?? e)))
+      .finally(() => setBusy(false))
+  }, [])
+
+  useEffect(() => { if (active) load(false) }, [active, load])
+
+  const notifyUpdated = useCallback(() => {
+    setNeedRestart(true)
+    setOpsVersion((v) => v + 1)
+    load(true)
+  }, [load])
+
+  return { status, error, busy, load, needRestart, opsVersion, notifyUpdated }
+}
+
+function RadarIcon() {
+  return h('svg', { viewBox: '0 0 16 16', width: '15', height: '15', 'aria-hidden': 'true' },
+    h('circle', { cx: '8', cy: '8', r: '6.2', fill: 'none', stroke: 'currentColor', strokeWidth: '1.3' }),
+    h('circle', { cx: '8', cy: '8', r: '3', fill: 'none', stroke: 'currentColor', strokeWidth: '1', opacity: '.55' }),
+    h('path', { d: 'M8 8 L12.4 3.6', stroke: 'currentColor', strokeWidth: '1.3', strokeLinecap: 'round' }),
+    h('circle', { cx: '10.6', cy: '5.4', r: '1.1', fill: 'currentColor' }))
 }
 
 function KindChip({ t, kind }) {
@@ -345,14 +442,23 @@ function CoreCard({ t, core }) {
     coreRow !== undefined && !coreRow.updateAvailable ? h('div', { className: 'duc-note' }, t('corePolicy')) : null)
 }
 
-function ProfileCard({ t, data, onUpdated }) {
+function ProfileCard({ t, data, onUpdated, compact = false }) {
+  const [showOk, setShowOk] = useState(false)
+  const behindRows = data.plugins.filter((r) => r.updateAvailable)
+  const okRows = data.plugins.filter((r) => !r.updateAvailable)
+  const rows = compact ? [...behindRows, ...(showOk ? okRows : [])] : data.plugins
+
   return h('div', { className: 'duc-card', key: data.profile },
     h('div', { className: 'duc-card-title' },
       `${t('profilesTitle')} — ${data.profile} `,
       h('span', { className: 'duc-note' }, t('scanSummary', { p: data.plugins.length, b: data.behind }))),
     data.plugins.length === 0
       ? h('div', { className: 'duc-note' }, t('noPlugins'))
-      : data.plugins.map((row) => h(PluginRow, { t, profile: data.profile, row, key: row.name, onUpdated })))
+      : rows.map((row) => h(PluginRow, { t, profile: data.profile, row, key: row.name, onUpdated })),
+    compact && okRows.length > 0
+      ? h('button', { className: 'duc-fold', onClick: () => setShowOk(!showOk) },
+          `${showOk ? '▾' : '▸'} ${t('upToDateFold', { n: okRows.length })}`)
+      : null)
 }
 
 function LogTail({ t, opsVersion }) {
@@ -374,23 +480,14 @@ function LogTail({ t, opsVersion }) {
         lines.map((op, i) => `${op.at.slice(11, 19)} [${op.level}] ${op.event} ${op.detail}`).join('\n')))
 }
 
+// ---------------------------------------------------------------------------
+// Seat 1: the Settings section (full page).
+// ---------------------------------------------------------------------------
+
 function CopilotSection({ t }) {
-  const [status, setStatus] = useState(null)
-  const [error, setError] = useState(null)
-  const [busy, setBusy] = useState(false)
-  const [needRestart, setNeedRestart] = useState(false)
-  const [opsVersion, setOpsVersion] = useState(0)
+  const { status, error, busy, load, needRestart, opsVersion, notifyUpdated } = useCopilotData(true)
 
-  const load = useCallback((force) => {
-    setBusy(true)
-    setError(null)
-    api(`/dsh-update-copilot/status${force ? '?force=1' : ''}`)
-      .then((data) => setStatus(data))
-      .catch((e) => setError(String(e.message ?? e)))
-      .finally(() => setBusy(false))
-  }, [])
-
-  useEffect(() => { injectStyles(); load(false) }, [load])
+  useEffect(() => { injectStyles() }, [])
 
   return h('div', { className: 'duc' },
     h('div', { className: 'duc-head' },
@@ -407,11 +504,91 @@ function CopilotSection({ t }) {
     status !== null ? h(CoreCard, { t, core: status.core }) : null,
     status !== null
       ? status.profiles.map((p) => h(ProfileCard, {
-          t, data: p, key: p.profile,
-          onUpdated: () => { setNeedRestart(true); setOpsVersion((v) => v + 1); load(true) },
+          t, data: p, key: p.profile, onUpdated: notifyUpdated,
         }))
       : null,
     h(LogTail, { t, opsVersion }))
+}
+
+// ---------------------------------------------------------------------------
+// Seat 2: the sidebar foot trigger with the lazy badge.
+// ---------------------------------------------------------------------------
+
+function FooterButton({ t, wide }) {
+  const ui = useUi()
+  useEffect(() => { injectStyles() }, [])
+  const behind = ui.summary !== null ? ui.summary.behindPlugins : 0
+
+  return h('button', {
+    className: 'duc-foot-btn',
+    title: behind > 0 && ui.everOpened ? t('badgeTitle', { n: behind }) : t('nav'),
+    'aria-label': t('nav'),
+    onClick: () => setUi({ open: true, everOpened: true }),
+  },
+    h('span', { className: 'duc-foot-icon' }, RadarIcon()),
+    wide === true ? h('span', { className: 'duc-foot-label' }, t('nav')) : null,
+    ui.everOpened && behind > 0
+      ? h('span', { className: 'duc-foot-badge' }, String(behind))
+      : null)
+}
+
+// ---------------------------------------------------------------------------
+// Seat 3: the popup modal in the shell overlay layer.
+// ---------------------------------------------------------------------------
+
+function PopupBody({ t }) {
+  const { status, error, busy, load, needRestart, notifyUpdated } = useCopilotData(true)
+
+  return h('div', { className: 'duc' },
+    h('div', { className: 'duc-toolbar' },
+      status !== null
+        ? h(React.Fragment, null,
+            `${t('lastScan')}: ${String(status.generatedAt).slice(11, 19)}`,
+            h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
+              busy ? t('rescanning') : t('refresh')))
+        : null),
+    needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
+    error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error}`) : null,
+    status === null && error === null ? h('div', { className: 'duc-note' }, t('loading')) : null,
+    status !== null ? h(CoreCard, { t, core: status.core }) : null,
+    status !== null
+      ? status.profiles.map((p) => h(ProfileCard, {
+          t, data: p, key: p.profile, compact: true, onUpdated: notifyUpdated,
+        }))
+      : null)
+}
+
+function CopilotOverlay({ t }) {
+  const ui = useUi()
+  const modalRef = useRef(null)
+
+  useEffect(() => {
+    if (!ui.open) return undefined
+    injectStyles()
+    modalRef.current?.focus()
+    const onKey = (e) => { if (e.key === 'Escape') setUi({ open: false }) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [ui.open])
+
+  if (!ui.open) return null
+
+  return h('div', { className: 'duc-backdrop', onClick: () => setUi({ open: false }) },
+    h('div', {
+      className: 'duc-modal',
+      ref: modalRef,
+      tabIndex: -1,
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-label': t('nav'),
+      onClick: (e) => e.stopPropagation(),
+    },
+      h('div', { className: 'duc-modal-head' },
+        h('div', null,
+          h('h2', null, t('nav')),
+          h('div', { className: 'duc-sub' }, t('subtitle'))),
+        h('button', { className: 'duc-modal-x', onClick: () => setUi({ open: false }), 'aria-label': t('close') }, '✕')),
+      h('div', { className: 'duc-modal-body' }, h(PopupBody, { t }))))
 }
 
 exports.name = 'dsh-update-copilot'
@@ -430,6 +607,34 @@ exports.apply = function apply(ctx) {
     locale: NS,
     inject: () => ({ t }),
   }, () => h(CopilotSection, { t })))
+
+  // Beside Settings at the sidebar foot; the shell hands each occupant { wide }.
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action',
+    id: 'update-copilot-trigger',
+    order: 10,
+    label: () => t('nav'),
+    locale: NS,
+    inject: () => ({ t }),
+  }, (props) => h(FooterButton, { t, wide: props?.wide === true })))
+
+  // The popup: one frame-wide floating layer occupant that renders null closed.
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'update-copilot-popup',
+    order: 50,
+    label: () => 'dsh-update-copilot',
+  }, () => h(CopilotOverlay, { t })))
+
+  // Visual-test hook: `?duc=1` auto-opens the popup once (also arms the badge).
+  ctx.effect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get('duc') === '1') {
+        setUi({ open: true, everOpened: true })
+      }
+    } catch { /* no window.location — ignore */ }
+    return () => {}
+  }, 'dsh-update-copilot: popup deep-link')
 }
 
 return module.exports; } });
