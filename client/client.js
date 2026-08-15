@@ -52,6 +52,7 @@ const zh = {
   current: '当前',
   latest: '最新',
   repo: '仓库',
+  npmPage: 'npm 包页面',
   upToDate: '已最新',
   behind: '可更新',
   brief: '决策简报',
@@ -138,6 +139,7 @@ const en = {
   current: 'current',
   latest: 'latest',
   repo: 'Repository',
+  npmPage: 'npm package page',
   upToDate: 'Up to date',
   behind: 'Update available',
   brief: 'Brief',
@@ -474,17 +476,44 @@ function SemverSpan({ t, semver }) {
   return h('span', { className: 'duc-chip' }, parts.length > 0 ? parts.join(' · ') : '0')
 }
 
-/** Compact ↗ to the item's GitHub repo (rendered only when `repo` is known). */
-function RepoLink({ t, repo, className }) {
-  if (repo === null || repo === undefined || repo === '') return null
-  return h('a', {
-    className: className ?? 'duc-repolink',
-    href: `https://github.com/${repo}`,
-    target: '_blank',
-    rel: 'noreferrer',
-    title: `${t('repo')}: ${repo}`,
-    'aria-label': `${t('repo')}: ${repo}`,
-  }, '↗')
+/**
+ * Compact ↗ outlink for one row. Prefers the host-resolved repoUrl (it may
+ * point into a monorepo subdirectory); falls back to owner/repo; npm-channel
+ * items with no resolvable GitHub repository fall back to their npm package
+ * page — the canonical index for an npm-installed plugin.
+ */
+function RepoLink({ t, repo, repoUrl, npmName, className }) {
+  if (repoUrl !== null && repoUrl !== undefined) {
+    return h('a', {
+      className: className ?? 'duc-repolink',
+      href: repoUrl,
+      target: '_blank',
+      rel: 'noreferrer',
+      title: `${t('repo')}: ${repo ?? repoUrl}`,
+      'aria-label': `${t('repo')}: ${repo ?? repoUrl}`,
+    }, '↗')
+  }
+  if (repo !== null && repo !== undefined && repo !== '') {
+    return h('a', {
+      className: className ?? 'duc-repolink',
+      href: `https://github.com/${repo}`,
+      target: '_blank',
+      rel: 'noreferrer',
+      title: `${t('repo')}: ${repo}`,
+      'aria-label': `${t('repo')}: ${repo}`,
+    }, '↗')
+  }
+  if (npmName !== null && npmName !== undefined && npmName !== '') {
+    return h('a', {
+      className: className ?? 'duc-repolink',
+      href: `https://www.npmjs.com/package/${npmName}`,
+      target: '_blank',
+      rel: 'noreferrer',
+      title: `${t('npmPage')}: ${npmName}`,
+      'aria-label': `${t('npmPage')}: ${npmName}`,
+    }, '↗')
+  }
+  return null
 }
 
 // Host briefs carry English prose (the agent path reads them directly); the
@@ -585,7 +614,11 @@ function BriefPanel({ t, profile, name }) {
         ? h(React.Fragment, null, ' ',
             h('a', { className: 'duc-chip duc-repolink', href: brief.repoUrl, target: '_blank', rel: 'noreferrer' },
               `${t('repo')} ↗`))
-        : null),
+        : brief.npmUrl !== null && brief.npmUrl !== undefined
+          ? h(React.Fragment, null, ' ',
+              h('a', { className: 'duc-chip duc-repolink', href: brief.npmUrl, target: '_blank', rel: 'noreferrer', title: t('npmPage') },
+                'npm ↗'))
+          : null),
     h('div', null, h('b', null, `${t('recommendation')}: `), localizedRecommendation(t, brief)),
     localizedNote(t, m.note) !== null ? h('div', { className: 'duc-note' }, localizedNote(t, m.note)) : null,
     listItems.length > 0
@@ -628,7 +661,7 @@ function PluginRow({ t, profile, row, onUpdated }) {
   return h('div', null,
     h('div', { className: 'duc-row' },
       h('span', { className: 'duc-name' }, row.name),
-      h(RepoLink, { t, repo: row.repo }),
+      h(RepoLink, { t, repo: row.repo, repoUrl: row.repoUrl, npmName: row.kind === 'npm' ? row.name : undefined }),
       h(KindChip, { t, kind: row.kind }),
       h('span', { className: 'duc-ver' },
         h('span', { title: t('current') }, shortVer(row.current)),
@@ -668,7 +701,7 @@ function CoreCard({ t, core }) {
     h('div', { className: 'duc-card-title' }, t('coreTitle')),
     core.packages.map((p) => h('div', { className: 'duc-row', key: p.name },
       h('span', { className: 'duc-name' }, p.name),
-      h(RepoLink, { t, repo: p.repo }),
+      h(RepoLink, { t, repo: p.repo, repoUrl: p.repoUrl, npmName: p.name }),
       h('span', { className: 'duc-chip' }, p.kind),
       h('span', { className: 'duc-ver' }, shortVer(p.current),
         p.updateAvailable ? h('span', { className: 'duc-arrow' }, ' → ') : null,
