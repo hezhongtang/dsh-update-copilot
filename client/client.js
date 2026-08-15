@@ -191,13 +191,17 @@ function injectStyles() {
     '.duc-error{color:#c25050}',
     '.duc-fold{border:none;background:transparent;color:inherit;font-size:12px;opacity:.7;cursor:pointer;padding:4px 0 0;text-align:left}',
     '.duc-fold:hover{opacity:1}',
-    // sidebar footer trigger + badge
-    '.duc-foot-btn{position:relative;display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:7px 10px;border:none;background:transparent;color:var(--dsw-alias-label-secondary,#888);font-size:13px;font-family:inherit;border-radius:8px;cursor:pointer}',
-    '.duc-foot-btn:hover{background:rgba(127,127,127,.12);color:var(--dsw-alias-label-primary,inherit)}',
+    // sidebar footer trigger — geometry copied from the shipped settings
+    // trigger (ui-settings-general .VOzbGW_trigger) so both rows share one
+    // grid: 14px/22px text, 34px tall, -4px bleed with a 10px text inset.
+    '.duc-foot-btn{position:relative;box-sizing:border-box;cursor:pointer;width:calc(100% + 8px);height:34px;color:var(--dsw-alias-label-primary,inherit);background:0 0;border:none;border-radius:12px;flex:none;align-items:center;gap:8px;margin:4px -4px;padding:6px 2px 6px 10px;font-family:inherit;font-size:14px;line-height:22px;display:flex;overflow:hidden}',
+    '.duc-foot-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}',
     '.duc-foot-btn:focus-visible{outline:1px solid var(--dsw-alias-border-l2,#888);outline-offset:-1px}',
+    '.duc-foot-btn.duc-rail{border-radius:50%;justify-content:center;gap:0;width:36px;height:36px;margin:8px 0 10px;padding:0}',
     '.duc-foot-icon{display:inline-flex;flex:none;align-items:center}',
     '.duc-foot-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
     '.duc-foot-badge{position:absolute;top:2px;right:6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--dsw-alias-state-error-primary,#d25050);color:#fff;font-size:10px;line-height:16px;text-align:center;font-variant-numeric:tabular-nums;pointer-events:none}',
+    '.duc-rail .duc-foot-badge{top:-1px;right:-1px}',
     // modal popup
     '.duc-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:24px}',
     '.duc-modal{background:var(--dsw-alias-bg-overlay,#fff);color:var(--dsw-alias-label-primary,inherit);border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.4));border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.25);width:min(680px,100%);max-height:min(82vh,780px);display:flex;flex-direction:column;outline:none}',
@@ -281,11 +285,10 @@ function useCopilotData(active) {
 }
 
 function RadarIcon() {
-  return h('svg', { viewBox: '0 0 16 16', width: '15', height: '15', 'aria-hidden': 'true' },
-    h('circle', { cx: '8', cy: '8', r: '6.2', fill: 'none', stroke: 'currentColor', strokeWidth: '1.3' }),
-    h('circle', { cx: '8', cy: '8', r: '3', fill: 'none', stroke: 'currentColor', strokeWidth: '1', opacity: '.55' }),
-    h('path', { d: 'M8 8 L12.4 3.6', stroke: 'currentColor', strokeWidth: '1.3', strokeLinecap: 'round' }),
-    h('circle', { cx: '10.6', cy: '5.4', r: '1.1', fill: 'currentColor' }))
+  return h('svg', { viewBox: '0 0 16 16', width: '16', height: '16', 'aria-hidden': 'true', fill: 'none' },
+    h('circle', { cx: '8', cy: '8', r: '6.2', stroke: 'currentColor', strokeWidth: '1.1' }),
+    h('circle', { cx: '8', cy: '8', r: '3', stroke: 'currentColor', strokeWidth: '.9', opacity: '.5' }),
+    h('path', { d: 'M8 8 L12.2 3.8', stroke: 'currentColor', strokeWidth: '1.1', strokeLinecap: 'round' }))
 }
 
 function KindChip({ t, kind }) {
@@ -520,9 +523,10 @@ function FooterButton({ t, wide }) {
   const behind = ui.summary !== null ? ui.summary.behindPlugins : 0
 
   return h('button', {
-    className: 'duc-foot-btn',
+    className: wide === true ? 'duc-foot-btn' : 'duc-foot-btn duc-rail',
     title: behind > 0 && ui.everOpened ? t('badgeTitle', { n: behind }) : t('nav'),
     'aria-label': t('nav'),
+    'aria-haspopup': 'dialog',
     onClick: () => setUi({ open: true, everOpened: true }),
   },
     h('span', { className: 'duc-foot-icon' }, RadarIcon()),
