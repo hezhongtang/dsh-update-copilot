@@ -27,7 +27,7 @@ This plugin takes the middle path: **detect everything, summarize what changed, 
 | 🔄 **Dual channel** | npm registry versions (full semver compare, prerelease-aware) and git upstreams (pinned-commit vs HEAD, `link:` checkouts via read-only `ls-remote`) |
 | 🧭 **Decision briefs** | Per-item: semver distance, risk level (major → high, minor → medium, patch → low), changelog material — npm versions between yours and latest, GitHub compare commits, release notes, or local `git log` |
 | 🤖 **Agent tools** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update` — ask your agent *"any updates?"* and get an honest, data-backed answer |
-| 🖥 **Web surfaces** | A sidebar trigger beside Settings (with a lazy badge: the behind-plugin count appears only after the first popup open — no background polling) opens a compact popup — behind rows first, up-to-date rows folded; the full page lives on in Settings → Update Copilot with inline briefs and two-step confirm updates |
+| 🖥 **Web surfaces** | A sidebar trigger beside Settings (with a lazy badge: the behind-plugin count appears only after the first popup open — no background polling; the badge can be turned off in settings for a quiet sidebar) opens a compact popup — behind rows first, up-to-date rows folded; the full page lives on in Settings → Update Copilot with inline briefs and two-step confirm updates |
 | 🛡 **Update guardrails** | Same-origin POST + explicit `confirm`, strict target allowlist, single-flight lock, 5-minute timeout; `link:`/`file:` and official `@deepseek-ai/*` installs are refused |
 
 ## Install
