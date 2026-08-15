@@ -233,6 +233,71 @@ function shortVer(v) {
 }
 
 // ---------------------------------------------------------------------------
+// Settings nav icon patch.
+//
+// The settings shell derives every section's nav glyph from a hardcoded id
+// map (models / agent-presets / plugins); every other section falls back to
+// the generic gear. The settings.section registration contract has no icon
+// field, so a registrant cannot supply one through the slot. This patch
+// swaps the gear inside OUR nav cell for the same radar SVG the sidebar
+// trigger uses, so both entrances carry one mark. It is label-matched,
+// idempotent, and disconnected with the plugin. The durable fix is an
+// upstream `icon` option on settings.section registrations.
+// ---------------------------------------------------------------------------
+
+const NAV_LABELS = [zh.nav, en.nav]
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+function radarSvgElement(className) {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('viewBox', '0 0 16 16')
+  svg.setAttribute('width', '16')
+  svg.setAttribute('height', '16')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('fill', 'none')
+  if (className !== null && className.length > 0) svg.setAttribute('class', className)
+  svg.setAttribute('data-duc', 'nav-radar')
+  const outer = document.createElementNS(SVG_NS, 'circle')
+  outer.setAttribute('cx', '8'); outer.setAttribute('cy', '8'); outer.setAttribute('r', '6.2')
+  outer.setAttribute('stroke', 'currentColor'); outer.setAttribute('stroke-width', '1.1')
+  const inner = document.createElementNS(SVG_NS, 'circle')
+  inner.setAttribute('cx', '8'); inner.setAttribute('cy', '8'); inner.setAttribute('r', '3')
+  inner.setAttribute('stroke', 'currentColor'); inner.setAttribute('stroke-width', '.9'); inner.setAttribute('opacity', '.5')
+  const beam = document.createElementNS(SVG_NS, 'path')
+  beam.setAttribute('d', 'M8 8 L12.2 3.8')
+  beam.setAttribute('stroke', 'currentColor'); beam.setAttribute('stroke-width', '1.1'); beam.setAttribute('stroke-linecap', 'round')
+  svg.append(outer, inner, beam)
+  return svg
+}
+
+function patchSettingsNavIcons() {
+  // The shipped settings panel is the dialog that owns a <nav>; ours (.duc-modal) is not.
+  const dialogs = document.querySelectorAll('div[role="dialog"][aria-modal="true"]:not(.duc-modal)')
+  for (const dialog of dialogs) {
+    for (const btn of dialog.querySelectorAll('nav button')) {
+      const label = (btn.textContent ?? '').trim()
+      if (!NAV_LABELS.includes(label)) continue
+      const gear = btn.firstElementChild
+      if (gear === null || gear.tagName.toLowerCase() !== 'svg' || gear.hasAttribute('data-duc')) continue
+      btn.replaceChild(radarSvgElement(gear.getAttribute('class')), gear)
+    }
+  }
+}
+
+/** Observe body; re-patch whenever the settings panel (re)mounts. */
+function mountSettingsNavIconPatch() {
+  if (typeof MutationObserver === 'undefined' || typeof document === 'undefined' || document.body === null) {
+    return () => {}
+  }
+  const observer = new MutationObserver((mutations) => {
+    if (mutations.some((m) => m.addedNodes.length > 0)) patchSettingsNavIcons()
+  })
+  observer.observe(document.body, { childList: true, subtree: true })
+  patchSettingsNavIcons()
+  return () => observer.disconnect()
+}
+
+// ---------------------------------------------------------------------------
 // Shared cross-seat UI state: popup open flag + the lazy badge summary.
 // useSyncExternalStore contract: immutable snapshots, notify on replace.
 // ---------------------------------------------------------------------------
@@ -633,9 +698,14 @@ exports.apply = function apply(ctx) {
     label: () => 'dsh-update-copilot',
   }, () => h(CopilotOverlay, { t })))
 
+  // Settings nav: swap our row's fallback gear for the radar mark.
+  ctx.effect(() => mountSettingsNavIconPatch(), 'dsh-update-copilot: settings nav icon patch')
+
   // Visual-test hooks: `?duc=1` auto-opens the popup once (also arms the
   // badge); `?duc=badge` arms the badge only — no popup, no backdrop, so a
-  // screenshot can judge the badge/text alignment on the sidebar itself.
+  // screenshot can judge the badge/text alignment on the sidebar itself;
+  // `?duc=settings` clicks the shipped settings trigger once the sidebar is
+  // up, so the settings nav (and the icon patch) is screenshot-visible.
   ctx.effect(() => {
     try {
       const mode = new URLSearchParams(window.location.search).get('duc')
@@ -647,6 +717,19 @@ exports.apply = function apply(ctx) {
           .then((res) => res.json())
           .then((data) => setUi({ summary: data.summary, generatedAt: data.generatedAt }))
           .catch(() => {})
+      } else if (mode === 'settings') {
+        let tries = 0
+        const timer = setInterval(() => {
+          tries += 1
+          const trigger = document.querySelector('button[aria-haspopup="dialog"]:not(.duc-foot-btn)')
+          if (trigger !== null) {
+            trigger.click()
+            clearInterval(timer)
+          } else if (tries > 40) {
+            clearInterval(timer)
+          }
+        }, 250)
+        return () => clearInterval(timer)
       }
     } catch { /* no window.location — ignore */ }
     return () => {}
