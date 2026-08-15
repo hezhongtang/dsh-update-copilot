@@ -200,8 +200,11 @@ function injectStyles() {
     '.duc-foot-btn.duc-rail{border-radius:50%;justify-content:center;gap:0;width:36px;height:36px;margin:8px 0 10px;padding:0}',
     '.duc-foot-icon{display:inline-flex;flex:none;align-items:center}',
     '.duc-foot-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-    '.duc-foot-badge{position:absolute;top:2px;right:6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--dsw-alias-state-error-primary,#d25050);color:#fff;font-size:10px;line-height:16px;text-align:center;font-variant-numeric:tabular-nums;pointer-events:none}',
-    '.duc-rail .duc-foot-badge{top:-1px;right:-1px}',
+    // badge: inline pill after the label in wide mode (flex centers it on the
+    // text line); corner dot on the round rail variant, kept inside the
+    // button's overflow:hidden bounds.
+    '.duc-foot-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;box-sizing:border-box;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--dsw-alias-state-error-primary,#d25050);color:#fff;font-size:10px;line-height:1;font-variant-numeric:tabular-nums;pointer-events:none}',
+    '.duc-rail .duc-foot-badge{position:absolute;top:2px;right:2px}',
     // modal popup
     '.duc-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:24px}',
     '.duc-modal{background:var(--dsw-alias-bg-overlay,#fff);color:var(--dsw-alias-label-primary,inherit);border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.4));border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.25);width:min(680px,100%);max-height:min(82vh,780px);display:flex;flex-direction:column;outline:none}',
@@ -630,11 +633,20 @@ exports.apply = function apply(ctx) {
     label: () => 'dsh-update-copilot',
   }, () => h(CopilotOverlay, { t })))
 
-  // Visual-test hook: `?duc=1` auto-opens the popup once (also arms the badge).
+  // Visual-test hooks: `?duc=1` auto-opens the popup once (also arms the
+  // badge); `?duc=badge` arms the badge only — no popup, no backdrop, so a
+  // screenshot can judge the badge/text alignment on the sidebar itself.
   ctx.effect(() => {
     try {
-      if (new URLSearchParams(window.location.search).get('duc') === '1') {
+      const mode = new URLSearchParams(window.location.search).get('duc')
+      if (mode === '1') {
         setUi({ open: true, everOpened: true })
+      } else if (mode === 'badge') {
+        setUi({ everOpened: true })
+        fetch('/dsh-update-copilot/status', { cache: 'no-store' })
+          .then((res) => res.json())
+          .then((data) => setUi({ summary: data.summary, generatedAt: data.generatedAt }))
+          .catch(() => {})
       }
     } catch { /* no window.location — ignore */ }
     return () => {}
