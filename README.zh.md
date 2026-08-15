@@ -34,6 +34,10 @@ DSH 迭代很快，插件生态同样如此。每个 profile 通过 pnpm spec �
 ## 安装
 
 ```sh
+# 从 npm 安装（推荐）
+dsh plugin --profile web add dsh-update-copilot
+
+# 或者直接从 GitHub 仓库安装
 dsh plugin --profile web add github:hezhongtang/dsh-update-copilot
 ```
 

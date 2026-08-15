@@ -34,6 +34,10 @@ This plugin takes the middle path: **detect everything, summarize what changed, 
 ## Install
 
 ```sh
+# from npm (recommended)
+dsh plugin --profile web add dsh-update-copilot
+
+# or straight from the GitHub repo
 dsh plugin --profile web add github:hezhongtang/dsh-update-copilot
 ```
 
