@@ -53,7 +53,7 @@ The agent runs `update_copilot_scan`, then builds a brief for each outdated item
 
 ### Or use the popup / panel
 
-The **sidebar button beside Settings** opens the compact radar popup (ESC or backdrop click closes; `?duc=1` in the URL opens it once — handy for screenshots and tests). **Settings → Update Copilot** is the full page: core status (with a copyable upgrade command — never executed), every profile's plugins with current → latest versions, inline decision briefs, and a two-step confirm button per update. A restart banner reminds you that plugin updates apply after the next `dsh` restart.
+The **sidebar button beside Settings** opens the compact radar popup (ESC or backdrop click closes; `?duc=1` in the URL opens it once — handy for screenshots and tests). **Settings → Update Copilot** is the full page: core status (with a copyable upgrade command — never executed), every profile's plugins with current → latest versions, inline decision briefs, and a two-step confirm button per update. After an update, a plugin in the running profile is **hot-reloaded in place** when its entry and bundle patch are unchanged; the restart banner is only shown for updates outside the phase-1 hot-reload scope (bundle-patch changes, non-current profiles, self-update, etc.).
 
 ### Agent tool reference
 
@@ -85,7 +85,7 @@ Updates execute only through `dsh plugin --profile <p> add <target>` — the sam
 
 ## Limitations
 
-- Plugin updates need a `dsh` restart to take effect (no hot-mount).
+- Plugin hot reload is phase-1 scoped: it covers updates whose running profile entry still exists and whose new version keeps the same `dsh.bundle.patch` and `dsh.client` declaration. Bundle-patch changes, non-current profiles, and copilot self-update still ask for a `dsh` restart.
 - Unauthenticated GitHub API is rate-limited (60 req/h) — briefs degrade gracefully to version lists.
 - Raw `git+https://` specs are reported as-is without a comparison channel.
 

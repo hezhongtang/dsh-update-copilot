@@ -60,7 +60,8 @@ const zh = {
   update: '更新',
   confirmUpdate: '确认更新？',
   updating: '更新中…',
-  updated: '✓ 已更新，重启后生效',
+  updated: '✓ 已更新',
+  hotReloaded: '✓ 已更新并热重载',
   updateNoChange: '未检测到变化',
   updateFail: '更新失败',
   restartHint: '插件更新完成后需重启 dsh（如 dsh web）生效',
@@ -150,7 +151,8 @@ const en = {
   update: 'Update',
   confirmUpdate: 'Confirm update?',
   updating: 'Updating…',
-  updated: '✓ Updated — restart to apply',
+  updated: '✓ Updated',
+  hotReloaded: '✓ Updated — hot reloaded',
   updateNoChange: 'No change detected',
   updateFail: 'Update failed',
   restartHint: 'Restart dsh (e.g. dsh web) after plugin updates to apply them',
@@ -447,8 +449,8 @@ function useCopilotData(active) {
 
   useEffect(() => { if (active) load(false) }, [active, load])
 
-  const notifyUpdated = useCallback(() => {
-    setNeedRestart(true)
+  const notifyUpdated = useCallback((outcome = null) => {
+    if (outcome === null || outcome.requiresRestart !== false) setNeedRestart(true)
     setOpsVersion((v) => v + 1)
     load(true)
   }, [load])
@@ -658,7 +660,7 @@ function PluginRow({ t, profile, row, onUpdated }) {
         body: JSON.stringify({ profile, name: row.name, confirm: true }),
       })
       setResult(outcome)
-      if (outcome.ok && outcome.changed) onUpdated()
+      if (outcome.ok && outcome.changed) onUpdated(outcome)
     } catch (e) {
       setResult({ ok: false, error: String(e.message ?? e) })
     } finally {
@@ -693,7 +695,7 @@ function PluginRow({ t, profile, row, onUpdated }) {
     result !== null ? h('div', {
       className: `duc-note ${result.ok ? '' : 'duc-error'}`,
     }, result.ok
-      ? (result.changed ? `${t('updated')}` : t('updateNoChange'))
+      ? (result.changed ? (result.hotReloaded === true ? t('hotReloaded') : t('updated')) : t('updateNoChange'))
       : localizedUpdateError(t, result)) : null,
     open ? h(BriefPanel, { t, profile, name: row.name }) : null)
 }
