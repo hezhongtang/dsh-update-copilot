@@ -110,7 +110,9 @@ const zh = {
   errUnsafe: '目标被安全策略拒绝',
   errConfirm: '需要先获得你的确认',
   errFailed: '更新失败',
+  errFailedAttempts: '更新失败（已尝试 {n} 次）',
   errTimeout: '更新超时',
+  errTimeoutAttempts: '更新超时（已尝试 {n} 次）',
   errNoop: 'pnpm 跑完了，但本地没有变化；请重新扫描后再试，如果一直这样，把下方输出发来排查。',
   errLatestUnavailable: '拿不到 npm 上的最新版本，稍后再试。',
   errUnsupportedChannel: '这种安装方式暂不支持自动更新。',
@@ -201,7 +203,9 @@ const en = {
   errUnsafe: 'Target rejected by the safety policy',
   errConfirm: 'Your explicit confirmation is required first',
   errFailed: 'Update failed',
+  errFailedAttempts: 'Update failed after {n} attempts',
   errTimeout: 'Update timed out',
+  errTimeoutAttempts: 'Update timed out after {n} attempts',
   errNoop: 'pnpm finished but nothing changed. Re-scan and retry; if it persists, share the output below for debugging.',
   errLatestUnavailable: 'Could not resolve the latest version from npm. Try again shortly.',
   errUnsupportedChannel: 'This install channel is not auto-updatable yet.',
@@ -564,6 +568,10 @@ const ERROR_CODE_KEYS = {
 }
 
 function localizedUpdateError(t, result) {
+  if (result?.attempts > 1) {
+    if (result.code === 'update_failed') return t('errFailedAttempts', { n: result.attempts })
+    if (result.code === 'update_timeout') return t('errTimeoutAttempts', { n: result.attempts })
+  }
   const key = ERROR_CODE_KEYS[result?.code ?? '']
   if (key !== undefined) return t(key)
   return `${t('errFailed')}: ${result?.error ?? ''}`

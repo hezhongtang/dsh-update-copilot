@@ -61,7 +61,7 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成决策简报、�
 |---|---|---|
 | `update_copilot_scan` | 读 | 全量扫描：核心 + 所有 profile（10 分钟缓存，`force` 强制刷新） |
 | `update_copilot_brief` | 读 | 单项的 semver 跨度、风险、变更材料与建议 |
-| `update_copilot_update` | 写 | 通过官方 `dsh plugin` CLI 执行一次**已确认**的更新 |
+| `update_copilot_update` | 写 | 通过官方 `dsh plugin` CLI 执行一次**已确认**的更新；失败/超时自动重试（默认共 3 次，1s/3s 退避） |
 
 ## 工作原理
 
@@ -75,7 +75,7 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成决策简报、�
 
 npm 通道刻意不信任 `latest` dist-tag：monorepo 子包的这个 tag 常年滞后，会把实际比 tag 更新的安装误报为落后。版本比较采用完整 semver 优先级（含 prerelease），因此 `0.1.0-rc.6 > 0.1.0-rc.5`、`1.0.0 > 1.0.0-rc.1` 都成立。
 
-更新只通过 `dsh plugin --profile <p> add <target>` 执行——和人手动输入的是同一条路径——目标字符串经过 allowlist 校验，任何情况下都不拼接 shell。
+更新只通过 `dsh plugin --profile <p> add <target>` 执行——和人手动输入的是同一条路径——目标字符串经过 allowlist 校验，任何情况下都不拼接 shell。失败或超时会自动重试：默认总共 3 次尝试，重试间隔 1s、3s；结果里返回 `attempts` 与最后一次输出。
 
 ## 安全性
 

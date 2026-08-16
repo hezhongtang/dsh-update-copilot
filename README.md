@@ -61,7 +61,7 @@ The **sidebar button beside Settings** opens the compact radar popup (ESC or bac
 |---|---|---|
 | `update_copilot_scan` | read | Full scan across core + all profiles (10-min cache, `force` to bypass) |
 | `update_copilot_brief` | read | Semver distance, risk, changelog material, recommendation for one item |
-| `update_copilot_update` | write | Execute one **confirmed** update through the official `dsh plugin` CLI |
+| `update_copilot_update` | write | Execute one **confirmed** update through the official `dsh plugin` CLI; failed/timeout attempts retry automatically (3 total, 1s/3s backoff) |
 
 ## How it works
 
@@ -75,7 +75,7 @@ Each dependency spec is classified into a channel, and each channel has its own 
 
 The npm channel deliberately ignores the `latest` dist-tag: monorepo sub-packages often leave that tag stale, which false-flags installs that are actually *newer* than the tag. Versions are compared with full semver precedence (prereleases included), so `0.1.0-rc.6 > 0.1.0-rc.5` and `1.0.0 > 1.0.0-rc.1` both hold.
 
-Updates execute only through `dsh plugin --profile <p> add <target>` — the same path a human would type — with the target string validated against an allowlist. Nothing is ever piped through a shell.
+Updates execute only through `dsh plugin --profile <p> add <target>` — the same path a human would type — with the target string validated against an allowlist. Nothing is ever piped through a shell. Failed or timed-out attempts are retried automatically: 3 total attempts by default, with 1s/3s backoff; the result reports `attempts` and the last output.
 
 ## Security
 
