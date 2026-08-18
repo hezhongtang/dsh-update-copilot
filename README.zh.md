@@ -28,7 +28,7 @@ DSH 迭代很快，插件生态同样如此。每个 profile 通过 pnpm spec �
 | 🧭 **决策简报** | 逐项给出：semver 跨度、风险分级（major → 高、minor → 中、patch → 低）、变更材料——npm 版本列表 / GitHub compare 提交 / Release 说明 / 本地 `git log`；每条材料都可点击跳转（npm 版本页、提交、Release、compare 对比页），每个插件行带 ↗ 直达其仓库——monorepo 子包定位到子目录，解析不出 GitHub 仓库的 npm 插件兜底到其 npm 包页面 |
 | 🤖 **Agent 工具** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update`——对 Agent 说一句「有没有更新」，得到有数据支撑的回答 |
 | 🖥 **Web 界面** | 设置按钮旁的侧栏入口（带懒加载徽章：首次打开弹窗后才显示落后插件数——不做后台轮询；可在设置中关闭徽章，还你一个安静侧栏）打开紧凑雷达弹窗——落后项优先、已最新折叠；完整页面仍在 设置 → 更新助手，含内联简报与两步确认更新 |
-| 🛡 **更新护栏** | 同源 POST + 显式 `confirm`、严格目标 allowlist、单并发锁、5 分钟超时；拒绝 `link:`/`file:` 与官方 `@deepseek-ai/*` 包 |
+| 🛡 **更新护栏** | 同源 POST + 显式 `confirm`、严格目标 allowlist、单并发锁、5 分钟超时；npm/github 通道只走官方 `dsh plugin` CLI，`link:` 本地目录走 git pull（自动暂存 → 拉取 → 恢复），冲突一律交还手动处理；`file:` 与官方 `@deepseek-ai/*` 包仍拒绝 |
 | 🌐 **完整双语** | 所有面向用户的文案——面板、弹窗、徽章、简报、建议、更新错误——跟随界面语言（中/英）；Agent 工具路径保留稳定英文标识 |
 
 ## 安装
@@ -61,7 +61,7 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成决策简报、�
 |---|---|---|
 | `update_copilot_scan` | 读 | 全量扫描：核心 + 所有 profile（10 分钟缓存，`force` 强制刷新） |
 | `update_copilot_brief` | 读 | 单项的 semver 跨度、风险、变更材料与建议 |
-| `update_copilot_update` | 写 | 通过官方 `dsh plugin` CLI 执行一次**已确认**的更新；失败/超时自动重试（默认共 3 次，1s/3s 退避） |
+| `update_copilot_update` | 写 | 执行一次**已确认**的更新：npm/github 通道走官方 `dsh plugin` CLI（失败/超时自动重试，默认共 3 次，1s/3s 退避）；`link:` 本地目录在 checkout 内执行 git pull（自动暂存 → 拉取 → 恢复，冲突交还手动处理） |
 
 ## 工作原理
 
@@ -75,7 +75,7 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成决策简报、�
 
 npm 通道刻意不信任 `latest` dist-tag：monorepo 子包的这个 tag 常年滞后，会把实际比 tag 更新的安装误报为落后。版本比较采用完整 semver 优先级（含 prerelease），因此 `0.1.0-rc.6 > 0.1.0-rc.5`、`1.0.0 > 1.0.0-rc.1` 都成立。
 
-更新只通过 `dsh plugin --profile <p> add <target>` 执行——和人手动输入的是同一条路径——目标字符串经过 allowlist 校验，任何情况下都不拼接 shell。失败或超时会自动重试：默认总共 3 次尝试，重试间隔 1s、3s；结果里返回 `attempts` 与最后一次输出。
+更新通过两条路径执行，都经过严格校验、不拼接 shell：npm/github 通道走 `dsh plugin --profile <p> add <target>`——和人手动输入的是同一条路径——目标字符串经过 allowlist 校验；`link:` 本地目录在 checkout 内直接跑 git（`git stash push` 暂存本地改动 → `git pull` → `git stash pop` 恢复），pull 失败/超时自动重试（默认共 3 次，1s/3s 退避），合并冲突或恢复冲突绝不自动解决——结果里返回 `attempts`、`stash` 状态与最后一次输出。
 
 ## 安全性
 
@@ -85,7 +85,8 @@ npm 通道刻意不信任 `latest` dist-tag：monorepo 子包的这个 tag 常�
 
 ## 限制
 
-- 插件热重载为一期能力：仅覆盖“当前 profile 中仍在运行、且新版未改动 `dsh.bundle.patch` 与 `dsh.client` 声明”的更新；bundle patch 变化、非当前 profile、copilot 自更新等仍会提示重启 `dsh`。
+- 插件热重载为一期能力：仅覆盖“当前 profile 中仍在运行、且新版未改动 `dsh.bundle.patch` 与 `dsh.client` 声明”的更新（`link:` 目录更新同样适用——node_modules 里是指向 checkout 的符号链接）；bundle patch 变化、非当前 profile、copilot 自更新等仍会提示重启 `dsh`。
+- `link:` 目录更新要求 checkout 配置了上游分支；本地未提交改动自动暂存并在拉取后恢复，恢复冲突时需手动 `git stash list` / `git stash pop` 处理。
 - GitHub API 未认证时限流 60 次/小时——简报会优雅降级为基础版本列表。
 - 裸 `git+https://` spec 只报告、不提供比较通道。
 

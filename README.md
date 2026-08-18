@@ -28,7 +28,7 @@ This plugin takes the middle path: **detect everything, summarize what changed, 
 | 🧭 **Decision briefs** | Per-item: semver distance, risk level (major → high, minor → medium, patch → low), changelog material — npm versions between yours and latest, GitHub compare commits, release notes, or local `git log`; every artifact links out (npm version pages, commits, releases, compare views) and every row carries a ↗ to its repository — monorepo sub-packages link to their subdirectory, npm plugins without a resolvable GitHub repository fall back to their npm package page |
 | 🤖 **Agent tools** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update` — ask your agent *"any updates?"* and get an honest, data-backed answer |
 | 🖥 **Web surfaces** | A sidebar trigger beside Settings (with a lazy badge: the behind-plugin count appears only after the first popup open — no background polling; the badge can be turned off in settings for a quiet sidebar) opens a compact popup — behind rows first, up-to-date rows folded; the full page lives on in Settings → Update Copilot with inline briefs and two-step confirm updates |
-| 🛡 **Update guardrails** | Same-origin POST + explicit `confirm`, strict target allowlist, single-flight lock, 5-minute timeout; `link:`/`file:` and official `@deepseek-ai/*` installs are refused |
+| 🛡 **Update guardrails** | Same-origin POST + explicit `confirm`, strict target allowlist, single-flight lock, 5-minute timeout; npm/github specs run only through the official `dsh plugin` CLI, `link:` checkouts update via git pull in their own directory (auto-stash → pull → restore; conflicts are always handed back for manual handling), `file:` and official `@deepseek-ai/*` installs are refused |
 | 🌐 **Fully bilingual** | Every user-facing string — panel, popup, badges, briefs, recommendations, update errors — follows the UI language (zh/en); the agent tool path keeps stable English identifiers |
 
 ## Install
@@ -61,7 +61,7 @@ The **sidebar button beside Settings** opens the compact radar popup (ESC or bac
 |---|---|---|
 | `update_copilot_scan` | read | Full scan across core + all profiles (10-min cache, `force` to bypass) |
 | `update_copilot_brief` | read | Semver distance, risk, changelog material, recommendation for one item |
-| `update_copilot_update` | write | Execute one **confirmed** update through the official `dsh plugin` CLI; failed/timeout attempts retry automatically (3 total, 1s/3s backoff) |
+| `update_copilot_update` | write | Execute one **confirmed** update: npm/github specs through the official `dsh plugin` CLI (failed/timeout attempts retry automatically — 3 total, 1s/3s backoff); `link:` checkouts via git pull inside their own directory (auto-stash → pull → restore, conflicts handed back for manual handling) |
 
 ## How it works
 
@@ -75,7 +75,7 @@ Each dependency spec is classified into a channel, and each channel has its own 
 
 The npm channel deliberately ignores the `latest` dist-tag: monorepo sub-packages often leave that tag stale, which false-flags installs that are actually *newer* than the tag. Versions are compared with full semver precedence (prereleases included), so `0.1.0-rc.6 > 0.1.0-rc.5` and `1.0.0 > 1.0.0-rc.1` both hold.
 
-Updates execute only through `dsh plugin --profile <p> add <target>` — the same path a human would type — with the target string validated against an allowlist. Nothing is ever piped through a shell. Failed or timed-out attempts are retried automatically: 3 total attempts by default, with 1s/3s backoff; the result reports `attempts` and the last output.
+Updates execute through two vetted paths, never a raw shell string: npm/github specs run `dsh plugin --profile <p> add <target>` — the same path a human would type — with the target string validated against an allowlist; `link:` checkouts run git directly in their directory (`git stash push` for local changes → `git pull` → `git stash pop` to restore them). Failed or timed-out pulls are retried automatically: 3 total attempts by default, with 1s/3s backoff; merge conflicts or failed restores are never auto-resolved — the result reports `attempts`, a `stash` summary, and the last output.
 
 ## Security
 
@@ -85,7 +85,8 @@ Updates execute only through `dsh plugin --profile <p> add <target>` — the sam
 
 ## Limitations
 
-- Plugin hot reload is phase-1 scoped: it covers updates whose running profile entry still exists and whose new version keeps the same `dsh.bundle.patch` and `dsh.client` declaration. Bundle-patch changes, non-current profiles, and copilot self-update still ask for a `dsh` restart.
+- Plugin hot reload is phase-1 scoped: it covers updates whose running profile entry still exists and whose new version keeps the same `dsh.bundle.patch` and `dsh.client` declaration (this includes `link:` checkouts — node_modules points at the checkout through a symlink, so the pull takes effect on the same files the reloader reads). Bundle-patch changes, non-current profiles, and copilot self-update still ask for a `dsh` restart.
+- `link:` updates require the checkout to have an upstream branch configured; uncommitted changes are auto-stashed and restored after the pull, and a failed restore (stash pop conflict) needs manual `git stash list` / `git stash pop`.
 - Unauthenticated GitHub API is rate-limited (60 req/h) — briefs degrade gracefully to version lists.
 - Raw `git+https://` specs are reported as-is without a comparison channel.
 

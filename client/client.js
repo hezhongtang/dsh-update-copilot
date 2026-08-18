@@ -90,6 +90,14 @@ const zh = {
   badgeTitle: '{n} 个插件可更新',
   hideBadge: '隐藏更新红点',
   hideBadgeDesc: '关闭侧栏按钮上的「可更新数量」徽章；弹窗与本页仍会显示完整信息',
+  progressPhase: '{phase}…',
+  progress_start: '开始更新',
+  progress_resolving: '解析依赖',
+  progress_downloading: '下载中',
+  progress_retry: '重试中',
+  progress_stash: '暂存本地改动',
+  progress_pull: '拉取上游',
+  progress_pop: '恢复本地改动',
   semverMajor: '主版本 ×{n}',
   semverMinor: '次版本 ×{n}',
   semverPatch: '补丁 ×{n}',
@@ -97,7 +105,7 @@ const zh = {
   recLow: '可以放心更新：仅补丁级修复。',
   recMedium: '通常可以更新；建议先浏览发行说明确认行为变化。',
   recHigh: '建议暂缓：大版本跳跃，先读迁移说明与 dsh 兼容范围再决定。',
-  recLinked: '请在本地仓库查看列出的提交，然后自行 git pull。',
+  recLinked: '本地链接插件：确认后 copilot 会在仓库内自动执行 git pull（先暂存本地改动，拉取后恢复）。',
   recUnknown: '无 semver 信号：阅读简报中的提交 / 发行说明后再决定。',
   noteRegistry: 'registry 暂不可达——无版本元数据',
   noteNoFetch: '本地未 fetch origin/HEAD——在仓库内执行 git fetch 后可见提交详情',
@@ -116,6 +124,13 @@ const zh = {
   errNoop: 'pnpm 跑完了，但本地没有变化；请重新扫描后再试，如果一直这样，把下方输出发来排查。',
   errLatestUnavailable: '拿不到 npm 上的最新版本，稍后再试。',
   errUnsupportedChannel: '这种安装方式暂不支持自动更新。',
+  errLinkedNoGit: '本地目录不是 git 仓库，无法自动 pull；请在其仓库内手动更新。',
+  errLinkedNoUpstream: '本地 checkout 没有配置上游分支，无法自动 pull；请先 git push -u 设置上游。',
+  errLinkedStashFailed: '暂存本地改动失败，已中止更新，未改动仓库；请手动处理未提交改动后重试。',
+  errLinkedPullFailed: 'git pull 失败，本地改动已恢复原位；请检查下方输出后重试。',
+  errLinkedMergeConflict: 'git pull 遇到合并冲突，需要手动处理：在仓库内解决冲突，或 git merge --abort 撤销后重试。',
+  errLinkedPopConflict: '拉取已成功，但恢复本地改动时冲突。请在仓库内手动解决：git stash list 查看，git stash pop 重试恢复。',
+  errLinkedTimeout: 'git pull 超时，本地改动已恢复原位；请检查网络后重试。',
 }
 
 const en = {
@@ -183,6 +198,14 @@ const en = {
   badgeTitle: '{n} plugin update(s) available',
   hideBadge: 'Hide update badge',
   hideBadgeDesc: 'Turn off the update-count badge on the sidebar button; the popup and this page keep full details',
+  progressPhase: '{phase}…',
+  progress_start: 'Starting update',
+  progress_resolving: 'Resolving dependencies',
+  progress_downloading: 'Downloading',
+  progress_retry: 'Retrying',
+  progress_stash: 'Stashing local changes',
+  progress_pull: 'Pulling upstream',
+  progress_pop: 'Restoring local changes',
   semverMajor: 'major ×{n}',
   semverMinor: 'minor ×{n}',
   semverPatch: 'patch ×{n}',
@@ -190,7 +213,7 @@ const en = {
   recLow: 'Safe to update: patch-level fixes only.',
   recMedium: 'Usually safe to update; skim the release notes for behavior changes first.',
   recHigh: 'Hold: major version jump. Read the migration notes, check dsh peer ranges, then decide.',
-  recLinked: 'Review the listed commits in your checkout, then git pull there yourself.',
+  recLinked: 'Local linked plugin: on confirm, the copilot runs git pull in its checkout (auto-stash first, then restores your local changes).',
   recUnknown: 'No semver signal: read the commits/release notes linked in the brief, then decide.',
   noteRegistry: 'registry unreachable — no version metadata',
   noteNoFetch: 'origin/HEAD not fetched locally — run git fetch in the checkout for commit details',
@@ -209,6 +232,13 @@ const en = {
   errNoop: 'pnpm finished but nothing changed. Re-scan and retry; if it persists, share the output below for debugging.',
   errLatestUnavailable: 'Could not resolve the latest version from npm. Try again shortly.',
   errUnsupportedChannel: 'This install channel is not auto-updatable yet.',
+  errLinkedNoGit: 'The directory is not a git checkout — update it manually from its own repo.',
+  errLinkedNoUpstream: 'The checkout has no upstream branch configured — run git push -u to set one first.',
+  errLinkedStashFailed: 'Could not stash local changes; aborted before touching the checkout. Handle the uncommitted changes and retry.',
+  errLinkedPullFailed: 'git pull failed and local changes were restored. Check the output below and retry.',
+  errLinkedMergeConflict: 'git pull stopped on a merge conflict — resolve it in the checkout, or git merge --abort to undo and retry.',
+  errLinkedPopConflict: 'The pull succeeded, but restoring your stashed local changes conflicted. Resolve manually: git stash list, then git stash pop to retry the restore.',
+  errLinkedTimeout: 'git pull timed out and local changes were restored. Check your network and retry.',
 }
 
 function injectStyles() {
@@ -243,6 +273,13 @@ function injectStyles() {
     '.duc-badge.low{color:#2e9e5b;background:rgba(46,158,91,.1);border:1px solid rgba(46,158,91,.35)}',
     '.duc-badge.unknown,.duc-badge.none{opacity:.7;border:1px solid rgba(127,127,127,.4)}',
     '.duc-actions{margin-left:auto;display:flex;gap:6px;align-items:center}',
+    // update progress bar + status line under the row
+    '.duc-progress-wrap{display:flex;align-items:center;gap:10px;padding:4px 0 6px;font-size:12px}',
+    '.duc-progress{flex:1;height:6px;min-width:120px;border-radius:3px;background:rgba(127,127,127,.18);overflow:hidden}',
+    '.duc-progress-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#508cff,#7ab8ff);transition:width .2s ease}',
+    '.duc-progress-fill.duc-indet{width:40%!important;animation:duc-indet 1.2s ease-in-out infinite}',
+    '@keyframes duc-indet{0%{margin-left:-40%}100%{margin-left:100%}}',
+    '.duc-progress-label{flex:none;font-variant-numeric:tabular-nums;min-width:38px;text-align:right;opacity:.8}',
     '.duc-brief{border-top:1px dashed rgba(127,127,127,.3);margin-top:6px;padding:8px 0 2px;display:flex;flex-direction:column;gap:6px;font-size:12.5px}',
     '.duc-brief b{font-weight:600}',
     '.duc-list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px}',
@@ -294,6 +331,47 @@ async function api(path, options) {
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
   return data
+}
+
+/**
+ * POST an update and read the Server-Sent Events response. The server emits
+ * `progress` (percent + phase), `retry`, `phase`, and one final `done` event
+ * carrying the outcome. Resolves with the outcome, or throws on transport
+ * errors / non-SSE responses (e.g. the 403 untrusted-origin answer).
+ */
+async function streamUpdate(profile, name, onEvent) {
+  const res = await fetch('/dsh-update-copilot/update', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ profile, name, confirm: true }),
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`
+    try { message = (await res.json()).error ?? message } catch { /* keep default */ }
+    throw new Error(message)
+  }
+  const reader = res.body?.getReader()
+  if (reader === undefined || reader === null) throw new Error('streaming not supported')
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let sep
+    while ((sep = buffer.indexOf('\n\n')) !== -1) {
+      const frame = buffer.slice(0, sep)
+      buffer = buffer.slice(sep + 2)
+      const dataLine = frame.split('\n').find((l) => l.startsWith('data: '))
+      if (dataLine === undefined) continue
+      let event
+      try { event = JSON.parse(dataLine.slice(6)) } catch { continue }
+      if (event.type === 'done') return event.outcome
+      onEvent(event)
+    }
+  }
+  throw new Error('stream ended before the result')
 }
 
 function shortVer(v) {
@@ -565,6 +643,13 @@ const ERROR_CODE_KEYS = {
   update_noop: 'errNoop',
   latest_unavailable: 'errLatestUnavailable',
   unsupported_channel: 'errUnsupportedChannel',
+  linked_no_git: 'errLinkedNoGit',
+  linked_no_upstream: 'errLinkedNoUpstream',
+  linked_stash_failed: 'errLinkedStashFailed',
+  linked_pull_failed: 'errLinkedPullFailed',
+  linked_merge_conflict: 'errLinkedMergeConflict',
+  linked_stash_pop_conflict: 'errLinkedPopConflict',
+  linked_timeout: 'errLinkedTimeout',
 }
 
 function localizedUpdateError(t, result) {
@@ -654,18 +739,22 @@ function PluginRow({ t, profile, row, onUpdated }) {
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
+  // Live update progress: null = idle; percent=null renders an indeterminate
+  // bar (pnpm output carries no percentage yet); phase is the latest stage.
+  const [progress, setProgress] = useState(null)
 
-  const canUpdate = row.updateAvailable && (row.kind === 'npm' || row.kind === 'github')
-  const note = row.official ? t('officialNote') : row.kind === 'linked' || row.kind === 'file' ? t('linkedNote') : null
+  const canUpdate = row.updateAvailable && (row.kind === 'npm' || row.kind === 'github' || row.kind === 'linked')
+  const note = row.official ? t('officialNote') : row.kind === 'file' ? t('linkedNote') : null
 
   async function runUpdate() {
     setBusy(true)
     setResult(null)
+    setProgress({ percent: null, phase: 'start' })
     try {
-      const outcome = await api('/dsh-update-copilot/update', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ profile, name: row.name, confirm: true }),
+      const outcome = await streamUpdate(profile, row.name, (event) => {
+        if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
+        else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
+        else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
       })
       setResult(outcome)
       if (outcome.ok && outcome.changed) onUpdated(outcome)
@@ -674,6 +763,7 @@ function PluginRow({ t, profile, row, onUpdated }) {
     } finally {
       setBusy(false)
       setConfirming(false)
+      setProgress(null)
     }
   }
 
@@ -700,6 +790,16 @@ function PluginRow({ t, profile, row, onUpdated }) {
               onClick: () => (confirming ? runUpdate() : setConfirming(true)),
               onBlur: () => setConfirming(false),
             }, confirming ? t('confirmUpdate') : t('update'))) : null)),
+    progress !== null ? h('div', { className: 'duc-progress-wrap' },
+      h('div', { className: 'duc-progress' },
+        h('div', {
+          className: progress.percent === null
+            ? 'duc-progress-fill duc-indet'
+            : 'duc-progress-fill',
+          style: progress.percent === null ? undefined : { width: `${progress.percent}%` },
+        })),
+      h('span', { className: 'duc-progress-label' },
+        progress.percent !== null ? `${progress.percent}%` : t('progressPhase', { phase: t(`progress_${progress.phase}`) }))) : null,
     result !== null ? h('div', {
       className: `duc-note ${result.ok ? '' : 'duc-error'}`,
     }, result.ok
