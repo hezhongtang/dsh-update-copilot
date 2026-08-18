@@ -59,6 +59,9 @@ const zh = {
   hideBrief: '收起',
   update: '更新',
   confirmUpdate: '确认更新？',
+  switchRemote: '远端源',
+  confirmSwitchRemote: '确认切换远端源？',
+  switchedRemote: '✓ 已切换到远端源，后续更新走 npm/GitHub 通道',
   updating: '更新中…',
   updated: '✓ 已更新',
   hotReloaded: '✓ 已更新并热重载',
@@ -131,6 +134,9 @@ const zh = {
   errLinkedMergeConflict: 'git pull 遇到合并冲突，需要手动处理：在仓库内解决冲突，或 git merge --abort 撤销后重试。',
   errLinkedPopConflict: '拉取已成功，但恢复本地改动时冲突。请在仓库内手动解决：git stash list 查看，git stash pop 重试恢复。',
   errLinkedTimeout: 'git pull 超时，本地改动已恢复原位；请检查网络后重试。',
+  errSwitchNoRepo: '本地仓库的 origin 不是 GitHub，无法切换远端源。',
+  errSwitchUnavailable: '既无 npm 发布，本地仓库也无可用 GitHub 上游，无法切换远端源。',
+  errSwitchSpecUnchanged: '依赖 spec 未被改写（仍是本地链接），请手动处理。',
 }
 
 const en = {
@@ -167,6 +173,9 @@ const en = {
   hideBrief: 'Hide',
   update: 'Update',
   confirmUpdate: 'Confirm update?',
+  switchRemote: 'Remote source',
+  confirmSwitchRemote: 'Switch to remote source?',
+  switchedRemote: '✓ Switched to remote source — future updates via npm/GitHub',
   updating: 'Updating…',
   updated: '✓ Updated',
   hotReloaded: '✓ Updated — hot reloaded',
@@ -239,6 +248,9 @@ const en = {
   errLinkedMergeConflict: 'git pull stopped on a merge conflict — resolve it in the checkout, or git merge --abort to undo and retry.',
   errLinkedPopConflict: 'The pull succeeded, but restoring your stashed local changes conflicted. Resolve manually: git stash list, then git stash pop to retry the restore.',
   errLinkedTimeout: 'git pull timed out and local changes were restored. Check your network and retry.',
+  errSwitchNoRepo: 'The checkout\'s origin is not a GitHub remote — cannot switch to a remote source.',
+  errSwitchUnavailable: 'No npm release and no usable GitHub upstream — cannot switch to a remote source.',
+  errSwitchSpecUnchanged: 'The dependency spec was not rewritten (still a local link). Handle the switch manually.',
 }
 
 function injectStyles() {
@@ -339,11 +351,11 @@ async function api(path, options) {
  * carrying the outcome. Resolves with the outcome, or throws on transport
  * errors / non-SSE responses (e.g. the 403 untrusted-origin answer).
  */
-async function streamUpdate(profile, name, onEvent) {
+async function streamUpdate(profile, name, onEvent, source = undefined) {
   const res = await fetch('/dsh-update-copilot/update', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ profile, name, confirm: true }),
+    body: JSON.stringify({ profile, name, confirm: true, ...(source !== undefined ? { source } : {}) }),
     cache: 'no-store',
   })
   if (!res.ok) {
@@ -650,6 +662,9 @@ const ERROR_CODE_KEYS = {
   linked_merge_conflict: 'errLinkedMergeConflict',
   linked_stash_pop_conflict: 'errLinkedPopConflict',
   linked_timeout: 'errLinkedTimeout',
+  linked_switch_no_repo: 'errSwitchNoRepo',
+  linked_switch_unavailable: 'errSwitchUnavailable',
+  linked_switch_spec_unchanged: 'errSwitchSpecUnchanged',
 }
 
 function localizedUpdateError(t, result) {
@@ -737,6 +752,7 @@ let autoBrief = false
 function PluginRow({ t, profile, row, onUpdated }) {
   const [open, setOpen] = useState(autoBrief && row.updateAvailable === true)
   const [confirming, setConfirming] = useState(false)
+  const [switchConfirming, setSwitchConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
   // Live update progress: null = idle; percent=null renders an indeterminate
@@ -744,6 +760,7 @@ function PluginRow({ t, profile, row, onUpdated }) {
   const [progress, setProgress] = useState(null)
 
   const canUpdate = row.updateAvailable && (row.kind === 'npm' || row.kind === 'github' || row.kind === 'linked')
+  const canSwitch = row.kind === 'linked'
   const note = row.official ? t('officialNote') : row.kind === 'file' ? t('linkedNote') : null
 
   async function runUpdate() {
@@ -763,6 +780,29 @@ function PluginRow({ t, profile, row, onUpdated }) {
     } finally {
       setBusy(false)
       setConfirming(false)
+      setSwitchConfirming(false)
+      setProgress(null)
+    }
+  }
+
+  async function runSwitch() {
+    setBusy(true)
+    setResult(null)
+    setProgress({ percent: null, phase: 'start' })
+    try {
+      const outcome = await streamUpdate(profile, row.name, (event) => {
+        if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
+        else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
+        else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
+      }, 'remote')
+      setResult(outcome)
+      if (outcome.ok && outcome.changed) onUpdated(outcome)
+    } catch (e) {
+      setResult({ ok: false, error: String(e.message ?? e) })
+    } finally {
+      setBusy(false)
+      setConfirming(false)
+      setSwitchConfirming(false)
       setProgress(null)
     }
   }
@@ -789,7 +829,14 @@ function PluginRow({ t, profile, row, onUpdated }) {
               className: `duc-btn ${confirming ? 'danger' : 'primary'}`,
               onClick: () => (confirming ? runUpdate() : setConfirming(true)),
               onBlur: () => setConfirming(false),
-            }, confirming ? t('confirmUpdate') : t('update'))) : null)),
+            }, confirming ? t('confirmUpdate') : t('update'))) : null,
+        canSwitch ? (busy
+          ? null
+          : h('button', {
+              className: `duc-btn ${switchConfirming ? 'danger' : ''}`,
+              onClick: () => (switchConfirming ? runSwitch() : setSwitchConfirming(true)),
+              onBlur: () => setSwitchConfirming(false),
+            }, switchConfirming ? t('confirmSwitchRemote') : t('switchRemote'))) : null)),
     progress !== null ? h('div', { className: 'duc-progress-wrap' },
       h('div', { className: 'duc-progress' },
         h('div', {
@@ -803,7 +850,9 @@ function PluginRow({ t, profile, row, onUpdated }) {
     result !== null ? h('div', {
       className: `duc-note ${result.ok ? '' : 'duc-error'}`,
     }, result.ok
-      ? (result.changed ? (result.hotReloaded === true ? t('hotReloaded') : t('updated')) : t('updateNoChange'))
+      ? (result.switched !== undefined ? t('switchedRemote')
+        : result.changed ? (result.hotReloaded === true ? t('hotReloaded') : t('updated'))
+          : t('updateNoChange'))
       : localizedUpdateError(t, result)) : null,
     open ? h(BriefPanel, { t, profile, name: row.name }) : null)
 }

@@ -61,7 +61,7 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成决策简报、�
 |---|---|---|
 | `update_copilot_scan` | 读 | 全量扫描：核心 + 所有 profile（10 分钟缓存，`force` 强制刷新） |
 | `update_copilot_brief` | 读 | 单项的 semver 跨度、风险、变更材料与建议 |
-| `update_copilot_update` | 写 | 执行一次**已确认**的更新：npm/github 通道走官方 `dsh plugin` CLI（失败/超时自动重试，默认共 3 次，1s/3s 退避）；`link:` 本地目录在 checkout 内执行 git pull（自动暂存 → 拉取 → 恢复，冲突交还手动处理） |
+| `update_copilot_update` | 写 | 执行一次**已确认**的更新：npm/github 通道走官方 `dsh plugin` CLI（失败/超时自动重试，默认共 3 次，1s/3s 退避）；`link:` 本地目录在 checkout 内执行 git pull（自动暂存 → 拉取 → 恢复，冲突交还手动处理），或传 `source: "remote"` 把依赖切换到 npm 已发布版本（包未发布到 npm 时用 `github:` spec）——会断开本地链接 |
 
 ## 工作原理
 
@@ -77,6 +77,8 @@ npm 通道刻意不信任 `latest` dist-tag：monorepo 子包的这个 tag 常�
 
 更新通过两条路径执行，都经过严格校验、不拼接 shell：npm/github 通道走 `dsh plugin --profile <p> add <target>`——和人手动输入的是同一条路径——目标字符串经过 allowlist 校验；`link:` 本地目录在 checkout 内直接跑 git（`git stash push` 暂存本地改动 → `git pull` → `git stash pop` 恢复），pull 失败/超时自动重试（默认共 3 次，1s/3s 退避），合并冲突或恢复冲突绝不自动解决——结果里返回 `attempts`、`stash` 状态与最后一次输出。
 
+`link:` 目录还可以**切换到远端源**：copilot 把依赖 spec 改写为 npm 上最新发布的版本（优先查 registry），包未发布到 npm 时改写为 `github:owner/repo#<origin HEAD>`。本地链接断开，此后更新走常规 npm/github 通道。切换是破坏性操作，永远需要显式确认，绝不并入默认 pull 路径。
+
 ## 安全性
 
 - 唯一的变更路由是 `POST /dsh-update-copilot/update`：强制同源 + 必须显式 `confirm: true`。
@@ -87,6 +89,7 @@ npm 通道刻意不信任 `latest` dist-tag：monorepo 子包的这个 tag 常�
 
 - 插件热重载为一期能力：仅覆盖“当前 profile 中仍在运行、且新版未改动 `dsh.bundle.patch` 与 `dsh.client` 声明”的更新（`link:` 目录更新同样适用——node_modules 里是指向 checkout 的符号链接）；bundle patch 变化、非当前 profile、copilot 自更新等仍会提示重启 `dsh`。
 - `link:` 目录更新要求 checkout 配置了上游分支；本地未提交改动自动暂存并在拉取后恢复，恢复冲突时需手动 `git stash list` / `git stash pop` 处理。
+- `link:` 切换到远端源会断开本地链接，且不提供自动切回（需手改 spec）；npm 优先策略安装的是 registry 版本，可能与本地开发中的 checkout 不一致。
 - GitHub API 未认证时限流 60 次/小时——简报会优雅降级为基础版本列表。
 - 裸 `git+https://` spec 只报告、不提供比较通道。
 
