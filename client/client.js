@@ -7,7 +7,7 @@ var module = { exports: {} }; var exports = module.exports;
  *
  * Three seats:
  *  - Settings section: the full update radar page (core + every profile's
- *    plugins, inline decision briefs, two-step confirm updates, op log).
+ *    plugins, inline update highlights, two-step confirm updates, op log).
  *  - sidebar.footer.action: a trigger beside the Settings button. Lazy badge:
  *    the behind-plugin count appears only after the popup has been opened at
  *    least once this session — no background polling, upstream APIs are only
@@ -24,6 +24,8 @@ const h = React.createElement
 const { useState, useEffect, useCallback, useRef, useSyncExternalStore } = React
 
 const NS = 'dsh-update-copilot'
+const NS_CORE_FOLDED = 'dsh-update-copilot:core-folded'
+const NS_LOGS_OPEN = 'dsh-update-copilot:logs-open'
 
 const zh = {
   nav: '更新助手',
@@ -42,6 +44,7 @@ const zh = {
   copyCmd: '复制升级命令',
   copied: '已复制',
   profilesTitle: 'Profile 插件',
+  profilesHint: 'Profile 是 DSH 的独立运行形态——web（浏览器界面）、headless（无界面/API 后台）、desktop（桌面端）等，也可自定义；每个 profile 维护自己独立的插件依赖与版本，更新互不影响。',
   noPlugins: '该 profile 没有插件依赖',
   kindNpm: 'npm',
   kindGithub: 'GitHub',
@@ -55,7 +58,7 @@ const zh = {
   npmPage: 'npm 包页面',
   upToDate: '已最新',
   behind: '可更新',
-  brief: '决策简报',
+  brief: '更新要点',
   hideBrief: '收起',
   update: '更新',
   confirmUpdate: '确认更新？',
@@ -82,7 +85,7 @@ const zh = {
   compare: '对比链接',
   aheadBy: '落后',
   commitsUnit: '个提交',
-  noMaterial: '暂无变更详情（可能网络受限或已是最新）',
+  noMaterial: '暂无更新要点（可能网络受限或已是最新）',
   officialNote: '官方包随 dsh 本体更新',
   linkedNote: '本地开发链接，请在其仓库内 git pull',
   logs: '操作日志',
@@ -109,7 +112,7 @@ const zh = {
   recMedium: '通常可以更新；建议先浏览发行说明确认行为变化。',
   recHigh: '建议暂缓：大版本跳跃，先读迁移说明与 dsh 兼容范围再决定。',
   recLinked: '本地链接插件：确认后 copilot 会在仓库内自动执行 git pull（先暂存本地改动，拉取后恢复）。',
-  recUnknown: '无 semver 信号：阅读简报中的提交 / 发行说明后再决定。',
+  recUnknown: '无 semver 信号：阅读下面的提交 / 发行说明后再决定。',
   noteRegistry: 'registry 暂不可达——无版本元数据',
   noteNoFetch: '本地未 fetch origin/HEAD——在仓库内执行 git fetch 后可见提交详情',
   noteNoFetchCompare: '本地未 fetch origin/HEAD——提交列表需先 git fetch；GitHub 对比页可直接打开',
@@ -156,6 +159,7 @@ const en = {
   copyCmd: 'Copy upgrade command',
   copied: 'Copied',
   profilesTitle: 'Profile plugins',
+  profilesHint: 'A profile is a standalone DSH runtime — web (browser UI), headless (no-UI/API backend), desktop, or a custom one. Each profile keeps its own plugin dependencies and versions, so updates are independent per profile.',
   noPlugins: 'No plugin dependencies in this profile',
   kindNpm: 'npm',
   kindGithub: 'GitHub',
@@ -169,7 +173,7 @@ const en = {
   npmPage: 'npm package page',
   upToDate: 'Up to date',
   behind: 'Update available',
-  brief: 'Brief',
+  brief: 'Update highlights',
   hideBrief: 'Hide',
   update: 'Update',
   confirmUpdate: 'Confirm update?',
@@ -196,7 +200,7 @@ const en = {
   compare: 'Compare',
   aheadBy: 'behind by',
   commitsUnit: 'commits',
-  noMaterial: 'No changelog material (network-limited or already current)',
+  noMaterial: 'No update highlights (network-limited or already current)',
   officialNote: 'Official packages follow the dsh core',
   linkedNote: 'Local dev link — git pull inside its checkout',
   logs: 'Operation log',
@@ -223,7 +227,7 @@ const en = {
   recMedium: 'Usually safe to update; skim the release notes for behavior changes first.',
   recHigh: 'Hold: major version jump. Read the migration notes, check dsh peer ranges, then decide.',
   recLinked: 'Local linked plugin: on confirm, the copilot runs git pull in its checkout (auto-stash first, then restores your local changes).',
-  recUnknown: 'No semver signal: read the commits/release notes linked in the brief, then decide.',
+  recUnknown: 'No semver signal: read the commits/release notes below, then decide.',
   noteRegistry: 'registry unreachable — no version metadata',
   noteNoFetch: 'origin/HEAD not fetched locally — run git fetch in the checkout for commit details',
   noteNoFetchCompare: 'origin/HEAD not fetched locally — the commit list needs a git fetch; the compare view on GitHub is always available',
@@ -270,11 +274,15 @@ function injectStyles() {
     '.duc-btn.danger{border-color:rgba(220,80,80,.7);background:rgba(220,80,80,.1)}',
     '.duc-card{border:1px solid rgba(127,127,127,.3);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px}',
     '.duc-card-title{font-weight:600;font-size:13px}',
+    '.duc-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+    '.duc-fold-inline{border:none;background:transparent;color:inherit;font-size:11px;opacity:.7;cursor:pointer;padding:0;line-height:1}',
     '.duc-note{font-size:12px;opacity:.65}',
+    '.duc-profiles-hint{font-size:12px;opacity:.75;border-left:2px solid rgba(127,127,127,.35);padding:2px 10px}',
     '.duc-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid rgba(127,127,127,.15)}',
     '.duc-row:first-of-type{border-top:none}',
     '.duc-name{font-weight:500;word-break:break-all}',
     '.duc-chip{font-size:11px;border:1px solid rgba(127,127,127,.4);border-radius:4px;padding:0 5px;opacity:.85}',
+    '.duc-chip.duc-cat{opacity:.6;border-style:dashed}',
     '.duc-ver{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}',
     '.duc-arrow{opacity:.6}',
     '.duc-badge{font-size:11px;border-radius:4px;padding:1px 7px}',
@@ -296,6 +304,7 @@ function injectStyles() {
     '.duc-brief b{font-weight:600}',
     '.duc-list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px}',
     '.duc-list a{color:inherit}',
+    '.duc-release-body{white-space:pre-wrap;word-break:break-word;opacity:.85;font-size:12px;line-height:1.5;margin-top:2px;max-height:96px;overflow:auto}',
     '.duc a{color:inherit}',
     '.duc-repolink{color:inherit;text-decoration:none;opacity:.55;font-size:12px;line-height:1;flex:none}',
     '.duc-repolink:hover{opacity:1;text-decoration:underline}',
@@ -564,6 +573,21 @@ function KindChip({ t, kind }) {
   return h('span', { className: 'duc-chip' }, t(map[kind] ?? 'kindOther'))
 }
 
+/**
+ * Category label borrowed from the dsh-market registry, when the server
+ * resolved one. `categories` is the registry's `{ key: { en, zh } }` map; the
+ * label follows the current UI language (html lang attribute).
+ */
+function CategoryChip({ category, categories }) {
+  if (category === null || category === undefined) return null
+  const meta = categories !== null && categories !== undefined ? categories[category] : undefined
+  if (meta === null || meta === undefined) return null
+  const lang = (typeof document !== 'undefined' ? document.documentElement.lang : '') || ''
+  const label = lang.startsWith('zh') ? (meta.zh ?? meta.en) : (meta.en ?? meta.zh)
+  if (typeof label !== 'string' || label === '') return null
+  return h('span', { className: 'duc-chip duc-cat' }, label)
+}
+
 function RiskChip({ t, level }) {
   const map = { high: 'riskHigh', medium: 'riskMedium', low: 'riskLow', unknown: 'riskUnknown', none: 'riskNone' }
   return h('span', { className: `duc-badge ${level}` }, `${t('risk')}: ${t(map[level] ?? 'riskUnknown')}`)
@@ -717,9 +741,13 @@ function BriefPanel({ t, profile, name }) {
     listItems.push(h('li', { key: 'r' },
       h('b', null, `${t('releases')}: `),
       h('ul', { className: 'duc-list' },
-        m.releases.slice(0, 3).map((r, i) => h('li', { key: i },
-          h('a', { href: r.url, target: '_blank', rel: 'noreferrer' }, r.name ?? r.tag),
-          r.publishedAt !== undefined ? ` (${fmtDate(r.publishedAt)})` : '')))))
+        m.releases.slice(0, 3).map((r, i) => {
+          const body = typeof r.body === 'string' && r.body.trim() !== '' ? r.body.trim() : null
+          return h('li', { key: i },
+            h('a', { href: r.url, target: '_blank', rel: 'noreferrer' }, r.name ?? r.tag),
+            r.publishedAt !== undefined ? ` (${fmtDate(r.publishedAt)})` : '',
+            body !== null ? h('div', { className: 'duc-release-body' }, body) : null)
+        }))))
   }
   if (m.compareUrl !== null && m.compareUrl !== undefined) {
     listItems.push(h('li', { key: 'u' },
@@ -746,10 +774,10 @@ function BriefPanel({ t, profile, name }) {
 }
 
 // Visual-test hook: set once by the `&brief=1` URL parameter — behind rows
-// then start with their decision brief already expanded (screenshot-visible).
+// then start with their update highlights already expanded (screenshot-visible).
 let autoBrief = false
 
-function PluginRow({ t, profile, row, onUpdated }) {
+function PluginRow({ t, profile, row, categories, onUpdated }) {
   const [open, setOpen] = useState(autoBrief && row.updateAvailable === true)
   const [confirming, setConfirming] = useState(false)
   const [switchConfirming, setSwitchConfirming] = useState(false)
@@ -812,6 +840,7 @@ function PluginRow({ t, profile, row, onUpdated }) {
       h('span', { className: 'duc-name' }, row.name),
       h(RepoLink, { t, repo: row.repo, repoUrl: row.repoUrl, npmName: row.kind === 'npm' ? row.name : undefined }),
       h(KindChip, { t, kind: row.kind }),
+      h(CategoryChip, { category: row.category, categories }),
       h('span', { className: 'duc-ver' },
         h('span', { title: t('current') }, shortVer(row.current)),
         row.updateAvailable ? h(React.Fragment, null,
@@ -858,16 +887,35 @@ function PluginRow({ t, profile, row, onUpdated }) {
 }
 
 function CoreCard({ t, core }) {
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(NS_CORE_FOLDED) === '1')
   const [copied, setCopied] = useState(false)
   const coreRow = core.packages[0]
+  function toggleCollapsed() {
+    const next = !collapsed
+    setCollapsed(next)
+    try { localStorage.setItem(NS_CORE_FOLDED, next ? '1' : '0') } catch { /* storage unavailable */ }
+  }
   function copyCmd() {
     navigator.clipboard?.writeText(core.updateCommand ?? '')
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
+  const bundleRows = core.packages.slice(1)
+  const visibleRows = collapsed ? core.packages.slice(0, 1) : core.packages
   return h('div', { className: 'duc-card' },
-    h('div', { className: 'duc-card-title' }, t('coreTitle')),
-    core.packages.map((p) => h('div', { className: 'duc-row', key: p.name },
+    h('div', { className: 'duc-card-title duc-card-head' },
+      h('button', { className: 'duc-fold duc-fold-inline', onClick: toggleCollapsed, 'aria-expanded': !collapsed },
+        collapsed ? '▸' : '▾'),
+      h('span', null, t('coreTitle')),
+      h('span', { className: 'duc-actions' },
+        coreRow !== undefined && coreRow.updateAvailable
+          ? h('button', {
+              className: 'duc-btn primary',
+              onClick: () => { if (core.updateCommand !== null) navigator.clipboard?.writeText(core.updateCommand) },
+              title: t('copyCmd'),
+            }, t('copyCmd'))
+          : null)),
+    visibleRows.map((p) => h('div', { className: 'duc-row', key: p.name },
       h('span', { className: 'duc-name' }, p.name),
       h(RepoLink, { t, repo: p.repo, repoUrl: p.repoUrl, npmName: p.name }),
       h('span', { className: 'duc-chip' }, p.kind),
@@ -876,15 +924,15 @@ function CoreCard({ t, core }) {
         p.updateAvailable ? shortVer(p.latest) : null),
       h('span', { className: `duc-badge ${p.updateAvailable ? 'behind' : 'ok'}` },
         p.updateAvailable ? t('coreBehind') : t('coreCurrent')))),
-    core.updateCommand !== null ? h('div', null,
+    !collapsed && core.updateCommand !== null ? h('div', null,
       h('div', { className: 'duc-note' }, t('corePolicy')),
       h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
         h('code', { className: 'duc-cmd', style: { flex: 1 } }, core.updateCommand),
         h('button', { className: 'duc-btn', onClick: copyCmd }, copied ? t('copied') : t('copyCmd')))) : null,
-    coreRow !== undefined && !coreRow.updateAvailable ? h('div', { className: 'duc-note' }, t('corePolicy')) : null)
+    !collapsed && coreRow !== undefined && !coreRow.updateAvailable ? h('div', { className: 'duc-note' }, t('corePolicy')) : null)
 }
 
-function ProfileCard({ t, data, onUpdated, compact = false }) {
+function ProfileCard({ t, data, categories, onUpdated, compact = false }) {
   const [showOk, setShowOk] = useState(false)
   const behindRows = data.plugins.filter((r) => r.updateAvailable)
   const okRows = data.plugins.filter((r) => !r.updateAvailable)
@@ -896,7 +944,7 @@ function ProfileCard({ t, data, onUpdated, compact = false }) {
       h('span', { className: 'duc-note' }, t('scanSummary', { p: data.plugins.length, b: data.behind }))),
     data.plugins.length === 0
       ? h('div', { className: 'duc-note' }, t('noPlugins'))
-      : rows.map((row) => h(PluginRow, { t, profile: data.profile, row, key: row.name, onUpdated })),
+      : rows.map((row) => h(PluginRow, { t, profile: data.profile, row, categories, key: row.name, onUpdated })),
     compact && okRows.length > 0
       ? h('button', { className: 'duc-fold', onClick: () => setShowOk(!showOk) },
           `${showOk ? '▾' : '▸'} ${t('upToDateFold', { n: okRows.length })}`)
@@ -904,6 +952,9 @@ function ProfileCard({ t, data, onUpdated, compact = false }) {
 }
 
 function LogTail({ t, opsVersion }) {
+  const [open, setOpen] = useState(() => {
+    try { return localStorage.getItem(NS_LOGS_OPEN) === '1' } catch { return false }
+  })
   const [ops, setOps] = useState(null)
   useEffect(() => {
     let cancelled = false
@@ -912,14 +963,22 @@ function LogTail({ t, opsVersion }) {
       .catch(() => { if (!cancelled) setOps([]) })
     return () => { cancelled = true }
   }, [opsVersion])
+  function toggleOpen() {
+    const next = !open
+    setOpen(next)
+    try { localStorage.setItem(NS_LOGS_OPEN, next ? '1' : '0') } catch { /* storage unavailable */ }
+  }
   if (ops === null) return null
   const lines = ops.slice(-30)
   return h('div', { className: 'duc-card' },
-    h('div', { className: 'duc-card-title' }, t('logs')),
-    lines.length === 0
+    h('div', { className: 'duc-card-title duc-card-head' },
+      h('button', { className: 'duc-fold duc-fold-inline', onClick: toggleOpen, 'aria-expanded': open },
+        open ? '▾' : '▸'),
+      h('span', null, t('logs'))),
+    open && (lines.length === 0
       ? h('div', { className: 'duc-note' }, t('empty'))
       : h('div', { className: 'duc-log' },
-        lines.map((op, i) => `${fmtClock(op.at)} [${op.level}] ${op.event} ${op.detail}`).join('\n')))
+        lines.map((op, i) => `${fmtClock(op.at)} [${op.level}] ${op.event} ${op.detail}`).join('\n'))))
 }
 
 // ---------------------------------------------------------------------------
@@ -959,9 +1018,12 @@ function CopilotSection({ t }) {
     status === null && error === null ? h('div', { className: 'duc-note' }, t('loading')) : null,
     h('div', { className: 'duc-card', style: { padding: '10px 12px' } }, h(BadgePrefRow, { t })),
     status !== null ? h(CoreCard, { t, core: status.core }) : null,
+    status !== null && status.profiles.length > 0
+      ? h('div', { className: 'duc-profiles-hint' }, t('profilesHint'))
+      : null,
     status !== null
       ? status.profiles.map((p) => h(ProfileCard, {
-          t, data: p, key: p.profile, onUpdated: notifyUpdated,
+          t, data: p, categories: status.categories, key: p.profile, onUpdated: notifyUpdated,
         }))
       : null,
     h(LogTail, { t, opsVersion }))
@@ -1012,7 +1074,7 @@ function PopupBody({ t }) {
     status !== null ? h(CoreCard, { t, core: status.core }) : null,
     status !== null
       ? status.profiles.map((p) => h(ProfileCard, {
-          t, data: p, key: p.profile, compact: true, onUpdated: notifyUpdated,
+          t, data: p, categories: status.categories, key: p.profile, compact: true, onUpdated: notifyUpdated,
         }))
       : null)
 }
@@ -1095,7 +1157,7 @@ exports.apply = function apply(ctx) {
   // shipped settings trigger once the sidebar is up and then selects our nav
   // row, so the section page (pref row included) is screenshot-visible.
   // Appending `&brief=1` to `?duc=1` or `?duc=settings` starts every behind
-  // row with its decision brief expanded, so brief-panel changes are
+  // row with its update highlights expanded, so highlight-panel changes are
   // screenshot-visible too.
   ctx.effect(() => {
     try {

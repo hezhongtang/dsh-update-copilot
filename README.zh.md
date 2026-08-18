@@ -1,7 +1,7 @@
 # dsh-update-copilot
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-0B7285?style=flat-square)](LICENSE)
-[![DSH core](https://img.shields.io/badge/DSH-%3E%3D%200.1.0--rc.6-5B4CF0?style=flat-square)](https://www.npmjs.com/package/@deepseek-ai/dsh)
+[![DSH core](https://img.shields.io/badge/DSH-%3E%3D%200.1.0--rc.7-5B4CF0?style=flat-square)](https://www.npmjs.com/package/@deepseek-ai/dsh)
 [![Zero build](https://img.shields.io/badge/zero--build-no%20bundler-2EA44F?style=flat-square)](lib)
 [![GitHub stars](https://img.shields.io/github/stars/hezhongtang/dsh-update-copilot?style=flat-square&logo=github)](https://github.com/hezhongtang/dsh-update-copilot/stargazers)
 
@@ -25,11 +25,11 @@ DSH 迭代很快，插件生态同样如此。每个 profile 通过 pnpm spec �
 |---|---|
 | 🔭 **全量雷达** | 一次扫描覆盖 dsh 本体 + 官方 bundle（`dsh-base`、`dsh-web-app`）+ 所有 profile 的插件依赖 |
 | 🔄 **双通道** | npm registry 版本（完整 semver 比较，含 prerelease）+ git 上游（pinned commit vs HEAD，`link:` 目录走只读 `ls-remote`） |
-| 🧭 **决策简报** | 逐项给出：semver 跨度、风险分级（major → 高、minor → 中、patch → 低）、变更材料——npm 版本列表 / GitHub compare 提交 / Release 说明 / 本地 `git log`；每条材料都可点击跳转（npm 版本页、提交、Release、compare 对比页），每个插件行带 ↗ 直达其仓库——monorepo 子包定位到子目录，解析不出 GitHub 仓库的 npm 插件兜底到其 npm 包页面 |
+| 🧭 **更新要点** | 逐项给出：semver 跨度、风险分级（major → 高、minor → 中、patch → 低）、变更材料——npm 版本列表 / GitHub compare 提交 / Release 说明（正文内联渲染）/ 本地 `git log`；每条材料都可点击跳转（npm 版本页、提交、Release、compare 对比页），每个插件行带 ↗ 直达其仓库——monorepo 子包定位到子目录，解析不出 GitHub 仓库的 npm 插件兜底到其 npm 包页面 |
 | 🤖 **Agent 工具** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update`——对 Agent 说一句「有没有更新」，得到有数据支撑的回答 |
-| 🖥 **Web 界面** | 设置按钮旁的侧栏入口（带懒加载徽章：首次打开弹窗后才显示落后插件数——不做后台轮询；可在设置中关闭徽章，还你一个安静侧栏）打开紧凑雷达弹窗——落后项优先、已最新折叠；完整页面仍在 设置 → 更新助手，含内联简报与两步确认更新 |
+| 🖥 **Web 界面** | 设置按钮旁的侧栏入口（带懒加载徽章：首次打开弹窗后才显示落后插件数——不做后台轮询；可在设置中关闭徽章，还你一个安静侧栏）打开紧凑雷达弹窗——落后项优先、已最新折叠；完整页面仍在 设置 → 更新助手，含内联更新要点与两步确认更新；更新过程通过 SSE 实时推送进度（解析依赖 / 下载中 / 重试中 / 暂存 / 拉取 / 恢复阶段），直接渲染成每行进度条 |
 | 🛡 **更新护栏** | 同源 POST + 显式 `confirm`、严格目标 allowlist、单并发锁、5 分钟超时；npm/github 通道只走官方 `dsh plugin` CLI，`link:` 本地目录走 git pull（自动暂存 → 拉取 → 恢复），冲突一律交还手动处理；`file:` 与官方 `@deepseek-ai/*` 包仍拒绝 |
-| 🌐 **完整双语** | 所有面向用户的文案——面板、弹窗、徽章、简报、建议、更新错误——跟随界面语言（中/英）；Agent 工具路径保留稳定英文标识 |
+| 🌐 **完整双语** | 所有面向用户的文案——面板、弹窗、徽章、更新要点、建议、更新错误——跟随界面语言（中/英）；Agent 工具路径保留稳定英文标识 |
 
 ## 安装
 
@@ -49,11 +49,11 @@ dsh plugin --profile web add github:hezhongtang/dsh-update-copilot
 
 > 「帮我看看插件有没有更新」
 
-Agent 会调用 `update_copilot_scan`，对每个落后项生成决策简报、先呈现风险，然后等你拍板。更新工具在没有 `confirm: true` 时直接拒绝执行。
+Agent 会调用 `update_copilot_scan`，对每个落后项生成更新要点、先呈现风险，然后等你拍板。更新工具在没有 `confirm: true` 时直接拒绝执行。
 
 ### 或者用弹窗 / 面板
 
-**设置旁的侧栏按钮**打开紧凑雷达弹窗（ESC 或点击遮罩关闭；URL 带 `?duc=1` 会自动打开一次——截图和测试很好用）。**设置 → 更新助手** 是完整页面：核心状态（附可复制的升级命令——只展示、绝不执行）、每个 profile 的插件当前 → 最新版本、内联决策简报、两步确认更新按钮。更新完成后，当前 profile 里 entry 与 bundle patch 未变的插件会**就地热重载**；只有热重载不适用的更新（bundle patch 变化、非当前 profile、自更新等）才显示重启横幅。
+**设置旁的侧栏按钮**打开紧凑雷达弹窗（ESC 或点击遮罩关闭；URL 带 `?duc=1` 会自动打开一次——截图和测试很好用）。**设置 → 更新助手** 是完整页面：核心状态（附可复制的升级命令——只展示、绝不执行）、每个 profile 的插件当前 → 最新版本、内联更新要点、两步确认更新按钮。更新完成后，当前 profile 里 entry 与 bundle patch 未变的插件会**就地热重载**；只有热重载不适用的更新（bundle patch 变化、非当前 profile、自更新等）才显示重启横幅。
 
 ### Agent 工具一览
 
@@ -90,7 +90,7 @@ npm 通道刻意不信任 `latest` dist-tag：monorepo 子包的这个 tag 常�
 - 插件热重载为一期能力：仅覆盖“当前 profile 中仍在运行、且新版未改动 `dsh.bundle.patch` 与 `dsh.client` 声明”的更新（`link:` 目录更新同样适用——node_modules 里是指向 checkout 的符号链接）；bundle patch 变化、非当前 profile、copilot 自更新等仍会提示重启 `dsh`。
 - `link:` 目录更新要求 checkout 配置了上游分支；本地未提交改动自动暂存并在拉取后恢复，恢复冲突时需手动 `git stash list` / `git stash pop` 处理。
 - `link:` 切换到远端源会断开本地链接，且不提供自动切回（需手改 spec）；npm 优先策略安装的是 registry 版本，可能与本地开发中的 checkout 不一致。
-- GitHub API 未认证时限流 60 次/小时——简报会优雅降级为基础版本列表。
+- GitHub API 未认证时限流 60 次/小时——更新要点会优雅降级为基础版本列表。
 - 裸 `git+https://` spec 只报告、不提供比较通道。
 
 ## 参与贡献
