@@ -1,6 +1,6 @@
 {
   "name": "dsh-update-copilot",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Update copilot for DeepSeek Harness: tracks the DSH core, bundled packages, and every profile plugin across npm and git, summarizes what changed for agent-assisted upgrade decisions, and updates only after explicit confirmation. · DSH 更新助手：追踪 dsh 本体、bundle 包和每个 profile 插件（npm 与 git 双通道），汇总变更内容辅助升级决策，确认后才执行更新。",
   "keywords": [
     "dsh-plugin",
