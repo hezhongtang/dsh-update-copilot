@@ -16,12 +16,19 @@ var module = { exports: {} }; var exports = module.exports;
  *    up-to-date rows folded away; same two-step confirm updates. Opened via
  *    the sidebar button or the `?duc=1` URL parameter (visual-test hook).
  *
- * Hand-authored CJS bundle (no build step); the only external is `react`.
+ * Hand-authored CJS bundle (no build step); externals are `react` and the
+ * host-provided `@deepseek-ai/dsh-client-ui-primitives` icon set.
  */
 
 const React = require('react')
 const h = React.createElement
 const { useState, useEffect, useCallback, useRef, useSyncExternalStore } = React
+// Official icon set (chevrons etc.), resolved by the host ModuleLoader just
+// like dsh-market does. Fall back to text glyphs if it is ever unavailable.
+let primitives = null
+try {
+  primitives = require('@deepseek-ai/dsh-client-ui-primitives')
+} catch { /* host without the primitives bundle — text chevrons below */ }
 
 const NS = 'dsh-update-copilot'
 const NS_CORE_FOLDED = 'dsh-update-copilot:core-folded'
@@ -98,6 +105,7 @@ const zh = {
   hideBadgeDesc: '关闭侧栏按钮上的「可更新数量」徽章；弹窗与本页仍会显示完整信息',
   progressPhase: '{phase}…',
   progress_start: '开始更新',
+  progress_waiting: '等待服务端完成…（旧版服务端，无实时进度）',
   progress_resolving: '解析依赖',
   progress_downloading: '下载中',
   progress_retry: '重试中',
@@ -213,6 +221,7 @@ const en = {
   hideBadgeDesc: 'Turn off the update-count badge on the sidebar button; the popup and this page keep full details',
   progressPhase: '{phase}…',
   progress_start: 'Starting update',
+  progress_waiting: 'Waiting for the server… (older server, no live progress)',
   progress_resolving: 'Resolving dependencies',
   progress_downloading: 'Downloading',
   progress_retry: 'Retrying',
@@ -274,8 +283,12 @@ function injectStyles() {
     '.duc-btn.danger{border-color:rgba(220,80,80,.7);background:rgba(220,80,80,.1)}',
     '.duc-card{border:1px solid rgba(127,127,127,.3);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px}',
     '.duc-card-title{font-weight:600;font-size:13px}',
-    '.duc-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
-    '.duc-fold-inline{border:none;background:transparent;color:inherit;font-size:11px;opacity:.7;cursor:pointer;padding:0;line-height:1}',
+    // collapse header — follows the dsh-market diag-section disclosure pattern
+    // (chevron icon + title + trailing actions in one full-width button)
+    '.duc-collapse-head{font:inherit;color:var(--dsw-alias-label-primary,#1f2328);cursor:pointer;text-align:left;background:0 0;border:none;align-items:center;gap:8px;width:100%;padding:0;font-size:13px;font-weight:600;display:flex}',
+    '.duc-collapse-icon{color:var(--dsw-alias-label-secondary,#6b7280);flex-shrink:0;display:inline-flex}',
+    '.duc-collapse-title{flex:1;min-width:0}',
+    '.duc-chevron-fallback{font-size:12px;line-height:1}',
     '.duc-note{font-size:12px;opacity:.65}',
     '.duc-profiles-hint{font-size:12px;opacity:.75;border-left:2px solid rgba(127,127,127,.35);padding:2px 10px}',
     '.duc-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid rgba(127,127,127,.15)}',
@@ -314,7 +327,7 @@ function injectStyles() {
     '.duc-banner{border:1px solid rgba(80,140,255,.45);background:rgba(80,140,255,.08);border-radius:8px;padding:8px 12px;font-size:12.5px}',
     '.duc-log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;word-break:break-all;border:1px solid rgba(127,127,127,.25);border-radius:6px;padding:8px;max-height:220px;overflow:auto;opacity:.85}',
     '.duc-error{color:#c25050}',
-    '.duc-fold{border:none;background:transparent;color:inherit;font-size:12px;opacity:.7;cursor:pointer;padding:4px 0 0;text-align:left}',
+    '.duc-fold{border:none;background:transparent;color:var(--dsw-alias-label-secondary,#6b7280);font-size:12px;opacity:.85;cursor:pointer;padding:4px 0 0;text-align:left;display:inline-flex;align-items:center;gap:4px}',
     '.duc-fold:hover{opacity:1}',
     '.duc-pref{display:flex;align-items:flex-start;gap:10px;cursor:pointer}',
     '.duc-pref input[type="checkbox"]{margin:3px 0 0;flex:none;width:15px;height:15px;accent-color:var(--dsw-alias-brand-primary,#508cff);cursor:pointer}',
@@ -355,10 +368,113 @@ async function api(path, options) {
 }
 
 /**
- * POST an update and read the Server-Sent Events response. The server emits
- * `progress` (percent + phase), `retry`, `phase`, and one final `done` event
- * carrying the outcome. Resolves with the outcome, or throws on transport
- * errors / non-SSE responses (e.g. the 403 untrusted-origin answer).
+ * Resolve one update response into an outcome. Accepts every wire shape the
+ * server has ever produced:
+ *  - non-2xx answers (403 untrusted origin, 400 missing confirm, 500 server
+ *    error) carry a JSON `{ error }` envelope → throw with that message;
+ *  - a Server-Sent Events stream (`text/event-stream`) carrying `progress` /
+ *    `retry` / `phase` frames and a final `done` frame with the outcome;
+ *  - a plain JSON body carrying the outcome directly — used by an older
+ *    server whose update route predates SSE (mixed-version skew: the page
+ *    always loads the newest client from disk while the long-lived dsh
+ *    process keeps its boot-time server code). The update already ran
+ *    server-side; returning its outcome keeps the success/failure truthful
+ *    instead of reporting a phantom "stream ended" failure.
+ *
+ * The body branch is shape-agnostic on purpose: it tries JSON first, then
+ * falls back to scanning for SSE `data:` frames, so a rewritten or missing
+ * content-type on a genuine stream still resolves. Only a body that is
+ * neither JSON nor a stream raises — with the content-type and an excerpt so
+ * the next incident names itself.
+ *
+ * Skew contract: the SSE route landed 2026-08-18 (plugin commit f0c4fbf;
+ * "stream ended" phrasing shipped in the same client). Once every reachable
+ * server runs that route (all processes restarted after that date), the
+ * plain-body branch and this comment can be deleted.
+ *
+ * Exported for the regression tests; not part of the plugin contract.
+ */
+async function consumeUpdateResponse(res, onEvent) {
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`
+    try { message = (await res.json()).error ?? message } catch { /* keep default */ }
+    throw new Error(message)
+  }
+  const isStream = /text\/event-stream/i.test(
+    typeof res.headers?.get === 'function' ? (res.headers.get('content-type') ?? '') : '',
+  )
+  if (!isStream) {
+    onEvent?.({ type: 'phase', phase: 'waiting' })
+    let raw = ''
+    try {
+      raw = await res.text()
+    } catch (error) {
+      throw new Error(`update response could not be read: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    let outcome = null
+    try { outcome = JSON.parse(raw) } catch { /* not JSON — scan for SSE frames below */ }
+    if (outcome !== null && typeof outcome === 'object' && !Array.isArray(outcome)) return outcome
+
+    // SSE frame wire-format, mirrored from lib/routes.js sendSse() — keep the
+    // two in sync when the format changes (see test/sse-client.test.mjs as well).
+    let sawSse = false
+    let scan = raw
+    let frameSep
+    while ((frameSep = scan.indexOf('\n\n')) !== -1) {
+      const frameText = scan.slice(0, frameSep)
+      scan = scan.slice(frameSep + 2)
+      const dataLine = frameText.split('\n').find((l) => l.startsWith('data: '))
+      if (dataLine === undefined) continue
+      sawSse = true
+      let event
+      try { event = JSON.parse(dataLine.slice(6)) } catch { continue }
+      if (event.type === 'done') return event.outcome
+      onEvent(event)
+    }
+
+    const type = typeof res.headers?.get === 'function' ? (res.headers.get('content-type') ?? '') : ''
+    const excerpt = raw.length > 0 ? raw.slice(0, 120) : ''
+    throw new Error(
+      `update endpoint did not answer with a stream or an outcome`
+      + ` (content-type: ${type === '' ? 'none' : type}`
+      + `${sawSse ? ', SSE frames seen but no terminal done event' : ''}`
+      + `${excerpt !== '' ? `, body: ${JSON.stringify(excerpt)}` : ''})`,
+    )
+  }
+
+  const reader = res.body?.getReader()
+  if (reader === undefined || reader === null) throw new Error('streaming not supported')
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      // A transport may deliver its final chunk together with `done: true`; the
+      // terminating frame can live inside it, so drain it before stopping.
+      if (value !== undefined) buffer += decoder.decode(value, { stream: true })
+      let sep
+      while ((sep = buffer.indexOf('\n\n')) !== -1) {
+        const frame = buffer.slice(0, sep)
+        buffer = buffer.slice(sep + 2)
+        const dataLine = frame.split('\n').find((l) => l.startsWith('data: '))
+        if (dataLine === undefined) continue
+        let event
+        try { event = JSON.parse(dataLine.slice(6)) } catch { continue }
+        if (event.type === 'done') return event.outcome
+        onEvent(event)
+      }
+      if (done) break
+    }
+  } finally {
+    // Release the body whether we resolved (done seen) or threw mid-stream.
+    try { await reader.cancel?.() } catch { /* already closed */ }
+  }
+  throw new Error('stream ended before the result')
+}
+
+/**
+ * POST an update and resolve the response. Throws on transport errors and on
+ * every answer shape `consumeUpdateResponse` classifies as a failure.
  */
 async function streamUpdate(profile, name, onEvent, source = undefined) {
   const res = await fetch('/dsh-update-copilot/update', {
@@ -367,32 +483,7 @@ async function streamUpdate(profile, name, onEvent, source = undefined) {
     body: JSON.stringify({ profile, name, confirm: true, ...(source !== undefined ? { source } : {}) }),
     cache: 'no-store',
   })
-  if (!res.ok) {
-    let message = `HTTP ${res.status}`
-    try { message = (await res.json()).error ?? message } catch { /* keep default */ }
-    throw new Error(message)
-  }
-  const reader = res.body?.getReader()
-  if (reader === undefined || reader === null) throw new Error('streaming not supported')
-  const decoder = new TextDecoder()
-  let buffer = ''
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let sep
-    while ((sep = buffer.indexOf('\n\n')) !== -1) {
-      const frame = buffer.slice(0, sep)
-      buffer = buffer.slice(sep + 2)
-      const dataLine = frame.split('\n').find((l) => l.startsWith('data: '))
-      if (dataLine === undefined) continue
-      let event
-      try { event = JSON.parse(dataLine.slice(6)) } catch { continue }
-      if (event.type === 'done') return event.outcome
-      onEvent(event)
-    }
-  }
-  throw new Error('stream ended before the result')
+  return consumeUpdateResponse(res, onEvent)
 }
 
 function shortVer(v) {
@@ -571,6 +662,19 @@ function RadarIcon() {
 function KindChip({ t, kind }) {
   const map = { npm: 'kindNpm', github: 'kindGithub', linked: 'kindLinked', file: 'kindFile', git: 'kindGit', other: 'kindOther' }
   return h('span', { className: 'duc-chip' }, t(map[kind] ?? 'kindOther'))
+}
+
+/**
+ * Disclosure chevron: official 14px outline icon when the primitives bundle is
+ * present, a plain text glyph otherwise. `open` faces down (expanded), closed
+ * faces right (collapsed) — the dsh-market disclosure convention.
+ */
+function Chevron({ open }) {
+  if (primitives !== null) {
+    const Icon = open ? primitives.IconChevronDownOutline14 : primitives.IconChevronRightOutline14
+    return h(Icon, { size: 14 })
+  }
+  return h('span', { className: 'duc-chevron-fallback' }, open ? '▾' : '▸')
 }
 
 /**
@@ -903,18 +1007,19 @@ function CoreCard({ t, core }) {
   const bundleRows = core.packages.slice(1)
   const visibleRows = collapsed ? core.packages.slice(0, 1) : core.packages
   return h('div', { className: 'duc-card' },
-    h('div', { className: 'duc-card-title duc-card-head' },
-      h('button', { className: 'duc-fold duc-fold-inline', onClick: toggleCollapsed, 'aria-expanded': !collapsed },
-        collapsed ? '▸' : '▾'),
-      h('span', null, t('coreTitle')),
-      h('span', { className: 'duc-actions' },
-        coreRow !== undefined && coreRow.updateAvailable
-          ? h('button', {
+    h('button', { type: 'button', className: 'duc-collapse-head', onClick: toggleCollapsed, 'aria-expanded': !collapsed },
+      h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
+        h(Chevron, { open: !collapsed })),
+      h('span', { className: 'duc-collapse-title' }, t('coreTitle')),
+      coreRow !== undefined && coreRow.updateAvailable
+        ? h('span', { className: 'duc-actions' },
+            h('button', {
+              type: 'button',
               className: 'duc-btn primary',
-              onClick: () => { if (core.updateCommand !== null) navigator.clipboard?.writeText(core.updateCommand) },
+              onClick: (e) => { e.stopPropagation(); if (core.updateCommand !== null) navigator.clipboard?.writeText(core.updateCommand) },
               title: t('copyCmd'),
-            }, t('copyCmd'))
-          : null)),
+            }, t('copyCmd')))
+        : null),
     visibleRows.map((p) => h('div', { className: 'duc-row', key: p.name },
       h('span', { className: 'duc-name' }, p.name),
       h(RepoLink, { t, repo: p.repo, repoUrl: p.repoUrl, npmName: p.name }),
@@ -946,8 +1051,10 @@ function ProfileCard({ t, data, categories, onUpdated, compact = false }) {
       ? h('div', { className: 'duc-note' }, t('noPlugins'))
       : rows.map((row) => h(PluginRow, { t, profile: data.profile, row, categories, key: row.name, onUpdated })),
     compact && okRows.length > 0
-      ? h('button', { className: 'duc-fold', onClick: () => setShowOk(!showOk) },
-          `${showOk ? '▾' : '▸'} ${t('upToDateFold', { n: okRows.length })}`)
+      ? h('button', { type: 'button', className: 'duc-fold', onClick: () => setShowOk(!showOk), 'aria-expanded': showOk },
+          h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
+            h(Chevron, { open: showOk })),
+          t('upToDateFold', { n: okRows.length }))
       : null)
 }
 
@@ -971,10 +1078,10 @@ function LogTail({ t, opsVersion }) {
   if (ops === null) return null
   const lines = ops.slice(-30)
   return h('div', { className: 'duc-card' },
-    h('div', { className: 'duc-card-title duc-card-head' },
-      h('button', { className: 'duc-fold duc-fold-inline', onClick: toggleOpen, 'aria-expanded': open },
-        open ? '▾' : '▸'),
-      h('span', null, t('logs'))),
+    h('button', { type: 'button', className: 'duc-collapse-head', onClick: toggleOpen, 'aria-expanded': open },
+      h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
+        h(Chevron, { open })),
+      h('span', { className: 'duc-collapse-title' }, t('logs'))),
     open && (lines.length === 0
       ? h('div', { className: 'duc-note' }, t('empty'))
       : h('div', { className: 'duc-log' },
@@ -1113,6 +1220,9 @@ function CopilotOverlay({ t }) {
 }
 
 exports.name = 'dsh-update-copilot'
+// Test seam (see test/sse-client.test.mjs); namespaced so the descriptor's
+// public shape stays exactly { name, inject, apply }.
+exports.__test = { consumeUpdateResponse }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.
 exports.inject = ['slots', 'locale']
