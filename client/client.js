@@ -266,11 +266,12 @@ const en = {
   errSwitchSpecUnchanged: 'The dependency spec was not rewritten (still a local link). Handle the switch manually.',
 }
 
+const DUC_STYLES_ID = 'duc-styles'
+const DUC_STYLES_PLUGIN = 'dsh-update-copilot'
+
 function injectStyles() {
-  if (document.getElementById('duc-styles') !== null) return
-  const style = document.createElement('style')
-  style.id = 'duc-styles'
-  style.textContent = [
+  if (typeof document === 'undefined' || document.head === null) return
+  const css = [
     '.duc{display:flex;flex-direction:column;gap:14px;font-size:13px;line-height:1.5}',
     '.duc-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}',
     '.duc-head h2{margin:0;font-size:16px;font-weight:600}',
@@ -357,8 +358,26 @@ function injectStyles() {
     '.duc-modal-body{padding:12px 16px 16px;overflow:auto;display:flex;flex-direction:column;gap:12px}',
     '.duc-toolbar{display:flex;align-items:center;gap:8px;font-size:12px;opacity:.75}',
   ].join('\n')
+  // Self-healing replace: a page that kept an older bundle's sheet (same id,
+  // possibly without the rules a newer bundle adds) must not block the fresh
+  // one — otherwise new seats render with the browser's default button chrome
+  // (the boxed look). The data-plugin stamp is the platform convention (see
+  // dsh-client-hmr removeOwnedStyles / dshmarket) so hot reload and unload can
+  // clean the tag and let the next bundle re-inject.
+  const existing = document.getElementById(DUC_STYLES_ID)
+  if (existing !== null && existing.getAttribute('data-plugin') === DUC_STYLES_PLUGIN && existing.textContent === css) return
+  if (existing !== null) existing.remove()
+  const style = document.createElement('style')
+  style.id = DUC_STYLES_ID
+  style.setAttribute('data-plugin', DUC_STYLES_PLUGIN)
+  style.textContent = css
   document.head.appendChild(style)
 }
+
+// Inject once at module top level, before any seat mounts: the panel, the
+// sidebar trigger and the popup share one sheet, and a fresh bundle must win
+// over whatever an older bundle left in the page.
+injectStyles()
 
 async function api(path, options) {
   const res = await fetch(path, { cache: 'no-store', ...options })
