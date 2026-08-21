@@ -93,33 +93,33 @@ test('official flag is sticky across profiles', () => {
   assert.equal(plugins[0].official, true)
 })
 
-test('aggregate rows retain managed children and target only independently updatable profiles', () => {
+test('aggregate rows retain profile-scoped mounts and target independently updatable profiles', () => {
   const plugins = aggregateRows([
     {
       profile: 'web',
       plugins: [row({ name: '@example/ui-suite', classification: 'aggregate' })],
-      managed: [row({ name: '@example/managed-ui', classification: 'aggregate-managed', managedBy: '@example/ui-suite' })],
+      relationships: [{ profile: 'web', parent: '@example/ui-suite', child: '@example/managed-ui', evidence: 'patch-insert+production-dependency' }],
     },
     {
       profile: 'desktop',
       plugins: [row({ name: '@example/ui-suite', classification: 'independent' })],
-      managed: [],
+      relationships: [],
     },
   ])
   const aggregate = plugins[0]
   assert.deepEqual(aggregate.updatableProfiles, ['web', 'desktop'])
-  assert.deepEqual(aggregate.managedProfiles.map((child) => `${child.profile}/${child.name}`), ['web/@example/managed-ui'])
+  assert.deepEqual(aggregate.mounts.map((child) => `${child.profile}/${child.child}`), ['web/@example/managed-ui'])
 })
 
-test('mixed independent and aggregate-managed package rows only target the independent profile', () => {
+test('mixed cross-profile mounts preserve each profile selection without changing targets', () => {
   const plugins = aggregateRows([
-    { profile: 'web', plugins: [row({ name: 'shared-ui', classification: 'independent' })], managed: [] },
+    { profile: 'web', plugins: [row({ name: 'shared-ui', classification: 'independent' })], relationships: [] },
     {
       profile: 'desktop',
       plugins: [row({ name: '@example/ui-suite', classification: 'aggregate' })],
-      managed: [row({ name: 'shared-ui', classification: 'aggregate-managed', managedBy: '@example/ui-suite' })],
+      relationships: [{ profile: 'desktop', parent: '@example/ui-suite', child: 'shared-ui', evidence: 'patch-insert+production-dependency' }],
     },
   ])
   assert.deepEqual(plugins.find((plugin) => plugin.name === 'shared-ui').updatableProfiles, ['web'])
-  assert.equal(plugins.find((plugin) => plugin.name === '@example/ui-suite').managedProfiles[0].profile, 'desktop')
+  assert.equal(plugins.find((plugin) => plugin.name === '@example/ui-suite').mounts[0].profile, 'desktop')
 })

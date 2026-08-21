@@ -53,10 +53,6 @@ const zh = {
   pluginsTitle: '插件（跨 profile 合并）',
   profilesHint: '同一插件可能装在多个 profile（web / headless / desktop…）；这里按包名合并展示，只更新具有独立更新资格的 profile。',
   noPlugins: '没有任何插件依赖',
-  showManaged: '展开 {name} 管理的插件',
-  hideManaged: '收起 {name} 管理的插件',
-  managedBy: '由 {name} 管理',
-  managedNote: '随 {name} 更新，不能单独更新',
   mountedBy: '由 {name} 挂载（独立）',
   mounts: '挂载独立插件：{names}',
   showMounted: '展开 {name} 挂载的独立插件',
@@ -64,7 +60,9 @@ const zh = {
   updateBundle: '更新 bundle',
   updatingBundle: '正在更新 bundle {i}/{n}：{name}',
   bundleUpdated: '✓ bundle 更新完成',
+  bundleNoChange: 'bundle 无需更新',
   bundleFailed: '{n} 项更新失败',
+  mountedUpdates: '{n} 个挂载插件可更新',
   kindNpm: 'npm',
   kindGithub: 'GitHub',
   kindLinked: '本地链接',
@@ -191,10 +189,6 @@ const en = {
   pluginsTitle: 'Plugins (merged across profiles)',
   profilesHint: 'A package may be installed in several profiles (web / headless / desktop…). Rows are merged by package name; Update targets only profiles eligible for an independent update.',
   noPlugins: 'No plugin dependencies installed',
-  showManaged: 'Show plugins managed by {name}',
-  hideManaged: 'Hide plugins managed by {name}',
-  managedBy: 'Managed by {name}',
-  managedNote: 'Updated with {name}; not independently updatable',
   mountedBy: 'Mounted by {name} (independent)',
   mounts: 'Mounts independent plugins: {names}',
   showMounted: 'Show independent plugins mounted by {name}',
@@ -202,7 +196,9 @@ const en = {
   updateBundle: 'Update bundle',
   updatingBundle: 'Updating bundle {i}/{n}: {name}',
   bundleUpdated: '✓ Bundle update finished',
+  bundleNoChange: 'Bundle is already up to date',
   bundleFailed: '{n} update(s) failed',
+  mountedUpdates: '{n} mounted update(s) available',
   kindNpm: 'npm',
   kindGithub: 'GitHub',
   kindLinked: 'linked',
@@ -344,9 +340,6 @@ function injectStyles() {
     '.duc-aggregate-toggle{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;border:1px solid rgba(127,127,127,.3);border-radius:4px;background:transparent;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer}',
     '.duc-aggregate-toggle:hover{border-color:rgba(127,127,127,.8);color:inherit}',
     '.duc-aggregate-toggle:focus-visible{outline:1px solid var(--dsw-alias-border-l2,#888);outline-offset:1px}',
-    '.duc-managed-group{margin:0 0 0 10px;padding-left:10px;border-left:2px solid rgba(127,127,127,.22)}',
-    '.duc-managed-group .duc-row{padding:5px 0}',
-    '.duc-managed-chip{opacity:.7;border-style:dashed}',
     '.duc-mount-chip{opacity:.72;border-style:dotted}',
     '.duc-mounted-group{margin:0 0 0 10px;padding-left:10px;border-left:2px solid rgba(80,140,255,.35)}',
     '.duc-mounted-group .duc-row{padding:5px 0}',
@@ -680,7 +673,7 @@ function writeBadgePref(hidden) {
   } catch { /* storage unavailable — in-memory only */ }
 }
 
-let uiState = { open: false, opener: null, everOpened: false, summary: null, generatedAt: null, hideBadge: readBadgePref() }
+let uiState = { open: false, opener: null, everOpened: false, summary: null, generatedAt: null, hideBadge: readBadgePref(), operation: null }
 const uiSubs = new Set()
 
 function setUi(patch) {
@@ -724,7 +717,7 @@ function useCopilotData(active) {
   const load = useCallback((force) => {
     setBusy(true)
     setError(null)
-    api(`/dsh-update-copilot/status${force ? '?force=1' : ''}`)
+    return api(`/dsh-update-copilot/status${force ? '?force=1' : ''}`)
       .then((data) => {
         setStatus(data)
         setUi({ summary: data.summary, generatedAt: data.generatedAt })
@@ -738,7 +731,7 @@ function useCopilotData(active) {
   const notifyUpdated = useCallback((outcome = null) => {
     if (outcome === null || outcome.requiresRestart !== false) setNeedRestart(true)
     setOpsVersion((v) => v + 1)
-    load(true)
+    return load(true)
   }, [load])
 
   return { status, error, busy, load, needRestart, opsVersion, notifyUpdated }
@@ -1022,29 +1015,80 @@ function UpdateResult({ t, result }) {
 
 /**
  * One package row, merged across profiles: the version cell lists every
- * installed profile with its current → latest; a single click on 更新 runs
- * the update in all of them (the update command is identical for every
- * profile). The only remaining two-step action is the destructive
+ * installed profile with its current → latest; a single click on Update runs
+ * only in its explicit eligible profiles. The only remaining two-step action is the destructive
  * link→remote source switch.
  */
 function rowActionsDisabled(busy, bulkRunning) {
   return busy || bulkRunning === true
 }
 
+function acquireMutation(kind) {
+  if (uiState.operation !== null) return false
+  setUi({ operation: kind })
+  return true
+}
+
+function releaseMutation() {
+  setUi({ operation: null })
+}
+
+async function withMutationLock(kind, operation) {
+  if (!acquireMutation(kind)) return undefined
+  try {
+    return await operation()
+  } finally {
+    releaseMutation()
+  }
+}
+
 function rowUpdateTarget(row) {
   return { name: row.name, profiles: row.updatableProfiles ?? [] }
 }
 
+function scopedRowUpdateTarget(row, relationshipProfiles = []) {
+  const target = rowUpdateTarget(row)
+  if (relationshipProfiles.length === 0) return target
+  return { ...target, profiles: target.profiles.filter((profile) => relationshipProfiles.includes(profile)) }
+}
+
 function bundleUpdateTargets(parent, mountedChildren) {
   const children = []
-  const visit = (nodes) => nodes.forEach((node) => {
-    children.push(node.row)
-    visit(node.children)
+  const visit = (nodes, inheritedProfiles = []) => nodes.forEach((node) => {
+    const edgeProfiles = node.relationshipProfiles ?? []
+    const profiles = inheritedProfiles.length === 0
+      ? edgeProfiles
+      : edgeProfiles.length === 0 ? inheritedProfiles : inheritedProfiles.filter((profile) => edgeProfiles.includes(profile))
+    children.push({ row: node.row, relationshipProfiles: profiles })
+    visit(node.children, profiles)
   })
   visit(mountedChildren)
-  return [parent, ...children]
-    .filter((row) => row.canAutoUpdate === true)
+  const seen = new Set()
+  return [{ row: parent, relationshipProfiles: [] }, ...children]
+    .filter(({ row }) => row.canAutoUpdate === true && row.updateAvailable === true)
+    .map(({ row, relationshipProfiles }) => scopedRowUpdateTarget(row, relationshipProfiles))
+    .filter((target) => target.profiles.length > 0)
+    .filter((target) => {
+      const key = `${target.name}\u0000${[...target.profiles].sort().join('\u0000')}`
+      if (seen.has(key)) return false
+      seen.add(key)
+     return true
+     })
+}
+
+function globalUpdateTargets(plugins) {
+  return plugins
+    .filter((row) => row.canAutoUpdate === true && row.updateAvailable === true)
     .map(rowUpdateTarget)
+}
+
+function mountedUpdateCount(children) {
+  return children.reduce((count, child) => count + (child.row.updateAvailable === true ? 1 : 0) + mountedUpdateCount(child.children), 0)
+}
+
+function shouldShowBundleUpdate(parent, mountedChildren) {
+  if (mountedChildren.length === 0) return false
+  return bundleUpdateTargets(parent, mountedChildren).length > 0
 }
 
 function mountRelationshipInfo(row) {
@@ -1066,9 +1110,9 @@ function mountRelationshipInfo(row) {
   return { mountedBy, mounts }
 }
 
-function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, mountedChildren = [], onRunBundle }) {
+function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refreshing = false, mountedChildren = [], onRunBundle }) {
+  const ui = useUi()
   const [open, setOpen] = useState(autoBrief && row.updateAvailable === true)
-  const [managedOpen, setManagedOpen] = useState(false)
   const [mountedOpen, setMountedOpen] = useState(false)
   const [switchConfirming, setSwitchConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -1081,16 +1125,15 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, mounted
   const switchProfile = row.profiles.length === 1 && row.profiles[0].canSwitch === true
     ? row.profiles[0].profile
     : null
-  const managed = row.managedProfiles ?? []
-  const hasManaged = managed.length > 0
   const hasMounted = mountedChildren.length > 0
-  const bundleTargets = bundleUpdateTargets(row, mountedChildren)
-  const canUpdateBundle = bundleTargets.some((target) => target.name !== row.name)
+  const canUpdateBundle = shouldShowBundleUpdate(row, mountedChildren)
+  const mountedBehind = mountedUpdateCount(mountedChildren)
   const mountInfo = mountRelationshipInfo(row)
   const note = row.official ? t('officialNote') : null
-  const actionsDisabled = rowActionsDisabled(busy, bulkRunning)
+  const actionsDisabled = rowActionsDisabled(busy, bulkRunning || refreshing || ui.operation !== null)
 
   async function runUpdate() {
+    if (!acquireMutation('row')) return
     setBusy(true)
     setResult(null)
     setProgress({ percent: null, phase: 'start' })
@@ -1101,17 +1144,19 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, mounted
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
       }, undefined, undefined, rowUpdateTarget(row).profiles)
       setResult(outcome)
-      if (outcome.ok && outcome.changed) onUpdated(outcome)
+      if (outcome.ok && outcome.changed) await onUpdated(outcome)
     } catch (e) {
       setResult({ ok: false, error: String(e.message ?? e) })
     } finally {
       setBusy(false)
       setSwitchConfirming(false)
       setProgress(null)
+      releaseMutation()
     }
   }
 
   async function runSwitch() {
+    if (!acquireMutation('switch')) return
     setBusy(true)
     setResult(null)
     setProgress({ percent: null, phase: 'start' })
@@ -1122,13 +1167,14 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, mounted
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
       }, switchProfile, 'remote')
       setResult(outcome)
-      if (outcome.ok && outcome.changed) onUpdated(outcome)
+      if (outcome.ok && outcome.changed) await onUpdated(outcome)
     } catch (e) {
       setResult({ ok: false, error: String(e.message ?? e) })
     } finally {
       setBusy(false)
       setSwitchConfirming(false)
       setProgress(null)
+      releaseMutation()
     }
   }
 
@@ -1136,14 +1182,6 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, mounted
     h('div', { className: 'duc-row' },
       h('span', { className: 'duc-name' }, row.name),
       h(RepoLink, { t, repo: row.repo, repoUrl: row.repoUrl, npmName: row.profiles.some((p) => p.kind === 'npm') ? row.name : undefined }),
-      hasManaged ? h('button', {
-        type: 'button',
-        className: 'duc-aggregate-toggle',
-        onClick: () => setManagedOpen(!managedOpen),
-        'aria-expanded': managedOpen,
-        'aria-label': t(managedOpen ? 'hideManaged' : 'showManaged', { name: row.name }),
-        title: t(managedOpen ? 'hideManaged' : 'showManaged', { name: row.name }),
-      }, h('span', { 'aria-hidden': 'true' }, h(Chevron, { open: managedOpen }))) : null,
       hasMounted ? h('button', {
         type: 'button',
         className: 'duc-aggregate-toggle',
@@ -1165,6 +1203,8 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, mounted
           : `${p.profile}: ${shortVer(p.current)}`))),
       h('span', { className: `duc-badge ${row.updateAvailable ? 'behind' : 'ok'}` },
         row.updateAvailable ? t('behind') : t('upToDate')),
+      !row.updateAvailable && mountedBehind > 0 ? h('span', { className: 'duc-note' },
+        t('mountedUpdates', { n: mountedBehind })) : null,
       mountInfo.mounts.length > 0 ? h('span', { className: 'duc-note' },
         t('mounts', { names: mountInfo.mounts.map((relation) => relation.child).join(', ') })) : null,
       note !== null ? h('span', { className: 'duc-note' }, note) : null,
@@ -1201,15 +1241,10 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, mounted
     open ? h(BriefPanel, { t, name: row.name }) : null,
     hasMounted && mountedOpen ? h('div', { className: 'duc-mounted-group' },
       mountedChildren.map((child) => h(PluginRow, {
-        t, row: child.row, categories, key: child.row.name, onUpdated, bulkRunning,
+        t, row: child.row, categories, key: child.row.name, onUpdated, bulkRunning, refreshing,
         mountedChildren: child.children, onRunBundle,
       }))) : null,
-    hasManaged && managedOpen ? h('div', { className: 'duc-managed-group' },
-      managed.map((child) => h('div', { className: 'duc-row', key: `${child.profile}/${child.name}` },
-        h('span', { className: 'duc-name' }, child.name),
-        h('span', { className: 'duc-chip duc-managed-chip' }, t('managedBy', { name: child.managedBy })),
-        h('span', { className: 'duc-ver' }, `${child.profile}: ${shortVer(child.current)}`),
-        h('span', { className: 'duc-note' }, t('managedNote', { name: child.managedBy }))))) : null)
+    )
 }
 
 function CoreCard({ t, core }) {
@@ -1269,7 +1304,7 @@ function partitionPluginGroups(plugins) {
   const behind = []
   const current = []
   for (const node of mounted) {
-    const group = { parent: node.row, managed: node.row.managedProfiles ?? [], mountedChildren: node.children }
+    const group = { parent: node.row, mountedChildren: node.children }
     if (nodeIsBehind(node)) behind.push(group)
     else current.push(group)
   }
@@ -1277,37 +1312,70 @@ function partitionPluginGroups(plugins) {
 }
 
 function groupMountedRows(plugins) {
-  const nodes = new Map(plugins.map((row) => [row.name, { row, children: [] }]))
-  const parents = new Map()
+  const rowsByName = new Map(plugins.map((row) => [row.name, row]))
+  const edgesByParent = new Map()
+  const incoming = new Set()
+
+  function reaches(start, target, seen = new Set()) {
+    if (start === target) return true
+    if (seen.has(start)) return false
+    seen.add(start)
+    return (edgesByParent.get(start) ?? []).some((edge) => reaches(edge.child, target, seen))
+  }
+
   for (const parent of plugins) {
     for (const relation of parent.mounts ?? []) {
       const child = relation?.child
-      if (typeof child !== 'string' || child === parent.name || !nodes.has(child) || parents.has(child)) continue
-      let cursor = parent.name
-      let cyclic = false
-      while (parents.has(cursor)) {
-        cursor = parents.get(cursor)
-        if (cursor === child) { cyclic = true; break }
+      const childRow = rowsByName.get(child)
+      if (typeof child !== 'string' || child === parent.name || childRow === undefined) continue
+      if (relation.parent !== parent.name || typeof relation.profile !== 'string') continue
+      const childProfile = (childRow.profiles ?? []).find((profile) => profile.profile === relation.profile)
+      // The child profile is authoritative: a parent may only render its
+      // selected relationship, never a competing inferred edge.
+      if (childProfile?.mountedBy !== parent.name) continue
+      let edge = (edgesByParent.get(parent.name) ?? []).find((candidate) => candidate.child === child)
+      if (edge === undefined) {
+        if (reaches(child, parent.name)) continue
+        edge = { child, profiles: [] }
+        const edges = edgesByParent.get(parent.name) ?? []
+        edges.push(edge)
+        edgesByParent.set(parent.name, edges)
       }
-      if (!cyclic) parents.set(child, parent.name)
+      if (!edge.profiles.includes(relation.profile)) edge.profiles.push(relation.profile)
+      incoming.add(child)
     }
   }
-  for (const [child, parent] of parents) nodes.get(parent)?.children.push(nodes.get(child))
-  return plugins.filter((row) => !parents.has(row.name)).map((row) => nodes.get(row.name))
+
+  function buildNode(row, relationshipProfiles = [], ancestry = new Set()) {
+    const nextAncestry = new Set(ancestry)
+    nextAncestry.add(row.name)
+    const children = []
+    for (const edge of edgesByParent.get(row.name) ?? []) {
+      if (nextAncestry.has(edge.child)) continue
+      const profiles = relationshipProfiles.length === 0
+        ? edge.profiles
+        : edge.profiles.filter((profile) => relationshipProfiles.includes(profile))
+      if (profiles.length === 0) continue
+      children.push(buildNode(rowsByName.get(edge.child), profiles, nextAncestry))
+    }
+    return { row, relationshipProfiles, children }
+  }
+
+  return plugins.filter((row) => !incoming.has(row.name)).map((row) => buildNode(row))
 }
 
 function nodeIsBehind(node) {
   return node.row.updateAvailable === true || node.children.some(nodeIsBehind)
 }
 
-function PluginListCard({ t, plugins, categories, onUpdated, compact = false, bulkRunning = false, bundleRunning = false, onRunBundle }) {
+function PluginListCard({ t, plugins, categories, onUpdated, compact = false, bulkRunning = false, bundleRunning = false, refreshing = false, onRunBundle }) {
   const [showOk, setShowOk] = useState(false)
   const groups = partitionPluginGroups(plugins)
-  const renderGroups = (items) => items.map(({ parent, managed, mountedChildren }) => h(PluginRow, {
-    t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated,
-    bulkRunning: bulkRunning || bundleRunning, mountedChildren, onRunBundle,
+  const renderGroups = (items) => items.map(({ parent, mountedChildren }) => h(PluginRow, {
+    t, row: parent, categories, key: parent.name, onUpdated,
+    bulkRunning: bulkRunning || bundleRunning, refreshing, mountedChildren, onRunBundle,
   }))
-  const rows = groupMountedRows(plugins).map((node) => ({ parent: node.row, managed: node.row.managedProfiles ?? [], mountedChildren: node.children }))
+  const rows = groupMountedRows(plugins).map((node) => ({ parent: node.row, mountedChildren: node.children }))
 
   return h('div', { className: 'duc-card' },
     h('div', { className: 'duc-card-title' },
@@ -1330,9 +1398,9 @@ function PluginListCard({ t, plugins, categories, onUpdated, compact = false, bu
               h('span', { className: 'duc-collapse-title' }, t('upToDateSection')),
               h('span', { className: 'duc-note' }, t('upToDateFold', { n: groups.current.length }))) : null,
             showOk ? h('div', { className: 'duc-section-body' }, renderGroups(groups.current)) : null)
-        : rows.map(({ parent, managed, mountedChildren }) => h(PluginRow, {
-            t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated,
-            bulkRunning: bulkRunning || bundleRunning, mountedChildren, onRunBundle,
+        : rows.map(({ parent, mountedChildren }) => h(PluginRow, {
+            t, row: parent, categories, key: parent.name, onUpdated,
+            bulkRunning: bulkRunning || bundleRunning, refreshing, mountedChildren, onRunBundle,
           })),
     )
 }
@@ -1345,25 +1413,31 @@ function PluginListCard({ t, plugins, categories, onUpdated, compact = false, bu
 function useBulkUpdate() {
   const [bulk, setBulk] = useState({ running: false, index: 0, total: 0, name: null })
   const [bulkResult, setBulkResult] = useState(null)
-  const runAll = useCallback(async (plugins) => {
-    const targets = plugins.filter((p) => p.canAutoUpdate === true)
+  const runAll = useCallback(async (plugins, onUpdated) => {
+    const targets = globalUpdateTargets(plugins)
     if (targets.length === 0) return
-    setBulkResult(null)
-    setBulk({ running: true, index: 0, total: targets.length, name: null })
-    const results = []
-    for (let i = 0; i < targets.length; i += 1) {
-      setBulk({ running: true, index: i + 1, total: targets.length, name: targets[i].name })
+    return withMutationLock('all', async () => {
+      setBulkResult(null)
+      setBulk({ running: true, index: 0, total: targets.length, name: null })
+      const results = []
       try {
-        results.push({ name: targets[i].name, outcome: await streamUpdate(targets[i].name, () => {}, undefined, undefined, targets[i].updatableProfiles) })
-      } catch (e) {
-        results.push({ name: targets[i].name, outcome: { ok: false, error: String(e.message ?? e) } })
+        for (let i = 0; i < targets.length; i += 1) {
+          setBulk({ running: true, index: i + 1, total: targets.length, name: targets[i].name })
+          try {
+            results.push({ name: targets[i].name, outcome: await streamUpdate(targets[i].name, () => {}, undefined, undefined, targets[i].profiles) })
+          } catch (e) {
+            results.push({ name: targets[i].name, outcome: { ok: false, error: String(e.message ?? e) } })
+          }
+        }
+        const failed = results.filter((r) => r.outcome.ok !== true).length
+        const changed = results.some((r) => r.outcome.changed === true)
+        setBulkResult({ failed, changed, requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+        if (changed) await onUpdated?.({ requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+        return results
+      } finally {
+        setBulk({ running: false, index: 0, total: 0, name: null })
       }
-    }
-    const failed = results.filter((r) => r.outcome.ok !== true).length
-    const changed = results.some((r) => r.outcome.changed === true)
-    setBulk({ running: false, index: 0, total: 0, name: null })
-    setBulkResult({ failed, changed, requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
-    return results
+    })
   }, [])
   return { bulk, bulkResult, runAll }
 }
@@ -1371,32 +1445,40 @@ function useBulkUpdate() {
 function useBundleUpdate() {
   const [bundle, setBundle] = useState({ running: false, index: 0, total: 0, name: null })
   const [bundleResult, setBundleResult] = useState(null)
-  const runBundle = useCallback(async (parent, mountedChildren) => {
+  const runBundle = useCallback(async (parent, mountedChildren, onUpdated) => {
     const targets = bundleUpdateTargets(parent, mountedChildren)
     if (targets.length === 0) return undefined
-    setBundleResult(null)
-    setBundle({ running: true, index: 0, total: targets.length, name: null })
-    const results = []
-    for (let i = 0; i < targets.length; i += 1) {
-      const target = targets[i]
-      setBundle({ running: true, index: i + 1, total: targets.length, name: target.name })
+    return withMutationLock('bundle', async () => {
+      setBundleResult(null)
+      setBundle({ running: true, index: 0, total: targets.length, name: null })
+      const results = []
       try {
-        results.push({ ...target, outcome: await streamUpdate(target.name, () => {}, undefined, undefined, target.profiles) })
-      } catch (e) {
-        results.push({ ...target, outcome: { ok: false, error: String(e.message ?? e) } })
+        for (let i = 0; i < targets.length; i += 1) {
+          const target = targets[i]
+          setBundle({ running: true, index: i + 1, total: targets.length, name: target.name })
+          try {
+            results.push({ ...target, outcome: await streamUpdate(target.name, () => {}, undefined, undefined, target.profiles) })
+          } catch (e) {
+            results.push({ ...target, outcome: { ok: false, error: String(e.message ?? e) } })
+          }
+        }
+        const failed = results.filter((result) => result.outcome.ok !== true).length
+        const changed = results.some((result) => result.outcome.changed === true)
+        setBundleResult({ parent: parent.name, results, failed })
+        if (changed) await onUpdated?.({ requiresRestart: results.some((result) => result.outcome.requiresRestart === true) })
+        return results
+      } finally {
+        setBundle({ running: false, index: 0, total: 0, name: null })
       }
-    }
-    const failed = results.filter((result) => result.outcome.ok !== true).length
-    setBundle({ running: false, index: 0, total: 0, name: null })
-    setBundleResult({ parent: parent.name, results, failed })
-    return results
+    })
   }, [])
   return { bundle, bundleResult, runBundle }
 }
 
 function BundleUpdateResult({ t, result }) {
+  const changed = result.results.some((item) => item.outcome.changed === true)
   return h('div', { className: `duc-note ${result.failed > 0 ? 'duc-error' : ''}` },
-    `${t('bundleUpdated')}${result.failed > 0 ? ` ${t('bundleFailed', { n: result.failed })}` : ''}`,
+    result.failed > 0 ? t('bundleFailed', { n: result.failed }) : (changed ? t('bundleUpdated') : t('bundleNoChange')),
     h('ul', { className: 'duc-list' }, result.results.map((item) => h('li', { key: item.name },
       item.outcome.ok === true
         ? (item.outcome.changed ? t('itemUpdated', { p: item.name }) : t('itemCurrent', { p: item.name }))
@@ -1405,7 +1487,7 @@ function BundleUpdateResult({ t, result }) {
 
 /** Toolbar actions shared by the settings page and the popup. */
 function UpdateAllButton({ t, plugins, bulk, runAll, blocked = false }) {
-  const hasTargets = plugins.some((p) => p.canAutoUpdate === true)
+  const hasTargets = globalUpdateTargets(plugins).length > 0
   if (bulk.running) {
     return h('span', { className: 'duc-bulk-progress', title: t('updatingAll', { i: bulk.index, n: bulk.total, name: bulk.name }) },
       t('updatingAll', { i: bulk.index, n: bulk.total, name: bulk.name }))
@@ -1467,21 +1549,16 @@ function CopilotSection({ t }) {
   const { status, error, busy, load, needRestart, opsVersion, notifyUpdated } = useCopilotData(true)
   const { bulk, bulkResult, runAll } = useBulkUpdate()
   const { bundle, bundleResult, runBundle } = useBundleUpdate()
+  const ui = useUi()
 
   useEffect(() => { injectStyles() }, [])
 
   async function onRunAll(plugins) {
-    const results = await runAll(plugins)
-    if (results === undefined) return
-    const changed = results.some((r) => r.outcome.changed === true)
-    if (changed) notifyUpdated({ requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+    await runAll(plugins, notifyUpdated)
   }
 
   async function onRunBundle(parent, mountedChildren) {
-    const results = await runBundle(parent, mountedChildren)
-    if (results !== undefined && results.some((result) => result.outcome.changed === true)) {
-      notifyUpdated({ requiresRestart: results.some((result) => result.outcome.requiresRestart === true) })
-    }
+    await runBundle(parent, mountedChildren, notifyUpdated)
   }
 
   return h('div', { className: 'duc' },
@@ -1490,9 +1567,9 @@ function CopilotSection({ t }) {
       h('span', { className: 'duc-sub' }, t('subtitle')),
       status !== null ? h('span', { className: 'duc-meta' },
         `${t('lastScan')}: ${fmtClock(status.generatedAt)}`,
-        h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
+        h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy || ui.operation !== null },
           busy ? t('rescanning') : t('refresh'))) : null,
-      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, blocked: bundle.running }) : null),
+      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, blocked: bundle.running || busy || ui.operation !== null }) : null),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
     bundle.running ? h('div', { className: 'duc-bulk-progress', title: t('updatingBundle', bundle) }, t('updatingBundle', bundle)) : null,
@@ -1509,7 +1586,7 @@ function CopilotSection({ t }) {
     status !== null
       ? h(PluginListCard, {
           t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated,
-          bulkRunning: bulk.running, bundleRunning: bundle.running, onRunBundle,
+          bulkRunning: bulk.running, bundleRunning: bundle.running, refreshing: busy || ui.operation !== null, onRunBundle,
         })
       : null,
     h(LogTail, { t, opsVersion }))
@@ -1563,19 +1640,14 @@ function PopupBody({ t }) {
   const { status, error, busy, load, needRestart, notifyUpdated } = useCopilotData(true)
   const { bulk, bulkResult, runAll } = useBulkUpdate()
   const { bundle, bundleResult, runBundle } = useBundleUpdate()
+  const ui = useUi()
 
   async function onRunAll(plugins) {
-    const results = await runAll(plugins)
-    if (results === undefined) return
-    const changed = results.some((r) => r.outcome.changed === true)
-    if (changed) notifyUpdated({ requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+    await runAll(plugins, notifyUpdated)
   }
 
   async function onRunBundle(parent, mountedChildren) {
-    const results = await runBundle(parent, mountedChildren)
-    if (results !== undefined && results.some((result) => result.outcome.changed === true)) {
-      notifyUpdated({ requiresRestart: results.some((result) => result.outcome.requiresRestart === true) })
-    }
+    await runBundle(parent, mountedChildren, notifyUpdated)
   }
 
   return h('div', { className: 'duc' },
@@ -1583,10 +1655,10 @@ function PopupBody({ t }) {
       status !== null
         ? h(React.Fragment, null,
             `${t('lastScan')}: ${fmtClock(status.generatedAt)}`,
-            h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
+            h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy || ui.operation !== null },
               busy ? t('rescanning') : t('refresh')))
         : null,
-      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, blocked: bundle.running }) : null),
+      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, blocked: bundle.running || busy || ui.operation !== null }) : null),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
     bundle.running ? h('div', { className: 'duc-bulk-progress', title: t('updatingBundle', bundle) }, t('updatingBundle', bundle)) : null,
@@ -1598,7 +1670,7 @@ function PopupBody({ t }) {
     status !== null
       ? h(PluginListCard, {
           t, plugins: status.plugins, categories: status.categories, compact: true, onUpdated: notifyUpdated,
-          bulkRunning: bulk.running, bundleRunning: bundle.running, onRunBundle,
+          bulkRunning: bulk.running, bundleRunning: bundle.running, refreshing: busy || ui.operation !== null, onRunBundle,
         })
       : null)
 }
@@ -1677,11 +1749,18 @@ exports.__test = {
   consumeUpdateResponse,
   loadBadgeStatus,
   getUiState: () => uiState,
+  acquireMutation,
+  releaseMutation,
+  withMutationLock,
   partitionPluginGroups,
   groupMountedRows,
   rowActionsDisabled,
   rowUpdateTarget,
+  scopedRowUpdateTarget,
   bundleUpdateTargets,
+  globalUpdateTargets,
+  mountedUpdateCount,
+  shouldShowBundleUpdate,
   mountRelationshipInfo,
   trapModalFocus,
 }

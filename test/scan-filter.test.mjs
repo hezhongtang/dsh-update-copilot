@@ -7,7 +7,7 @@ import { join } from 'node:path'
 const home = mkdtempSync(join(tmpdir(), 'dsh-update-copilot-'))
 process.env.DSH_HOME = home
 const { clearScanCache, scanAll, scanProfile } = await import('../lib/scan.js')
-const { updatePluginAll } = await import('../lib/update.js')
+const { updatePlugin, updatePluginAll } = await import('../lib/update.js')
 
 function writeJson(file, value) {
   mkdirSync(join(file, '..'), { recursive: true })
@@ -22,7 +22,7 @@ function fixtureSpec(kind, profile, name) {
   return `${kind}:${join(home, 'fixtures', profile, name).replace(/\\/g, '/')}`
 }
 
-test('scan hides official and aggregate-managed dependencies while retaining independent and linked plugins', async (t) => {
+test('scan exposes mounts without changing direct dependency update classifications', async (t) => {
   t.after(() => {
     clearScanCache()
     rmSync(home, { recursive: true, force: true })
@@ -87,10 +87,10 @@ test('scan hides official and aggregate-managed dependencies while retaining ind
     result.official.map(({ name, classification }) => ({ name, classification })),
     [{ name: '@deepseek-ai/dsh-web-app', classification: 'official' }],
   )
-  assert.deepEqual(result.managed, [])
+  assert.equal(Object.prototype.hasOwnProperty.call(result, 'managed'), false)
   assert.deepEqual(result.relationships, [
-    { parent: '@example/ui-suite', child: '@example/managed-ui', evidence: 'patch-insert+production-dependency' },
-    { parent: '@example/ui-suite', child: 'third-party-plugin', evidence: 'patch-insert+production-dependency' },
+    { profile: 'web', parent: '@example/ui-suite', child: '@example/managed-ui', evidence: 'patch-insert+production-dependency' },
+    { profile: 'web', parent: '@example/ui-suite', child: 'third-party-plugin', evidence: 'patch-insert+production-dependency' },
   ])
   assert.equal(result.behind, 4)
   const all = await scanAll(true)
@@ -122,7 +122,7 @@ test('core command pins the scanner-selected highest published version', async (
   assert.equal(result.core.updateCommand, 'npm install -g @deepseek-ai/dsh@1.4.0')
 })
 
-test('package-wide updates honor explicit eligible profiles and never select aggregate-managed children', async (t) => {
+test('package-wide updates retain a mounted child target in its selected profile', async (t) => {
   t.after(() => {
     clearScanCache()
     rmSync(home, { recursive: true, force: true })
@@ -145,4 +145,29 @@ test('package-wide updates honor explicit eligible profiles and never select agg
   const childUpdate = await updatePluginAll('shared-ui', {}, { profiles: ['desktop'] })
   assert.equal(childUpdate.profileCount, 1)
   assert.notEqual(childUpdate.code, 'not_installed')
+})
+
+test('direct official package updates are report-only on every install channel', async (t) => {
+  t.after(() => {
+    clearScanCache()
+    rmSync(home, { recursive: true, force: true })
+  })
+  writeJson(join(home, 'profiles', 'web', 'package.json'), {
+    dependencies: {
+      '@deepseek-ai/official-addon': '^1.0.0',
+      '@deepseek-ai/official-link': 'link:./fixtures/official-link',
+    },
+  })
+  const originalFetch = globalThis.fetch
+  let fetched = false
+  globalThis.fetch = async () => { fetched = true; throw new Error('official package must not query the registry') }
+  t.after(() => { globalThis.fetch = originalFetch })
+
+  const outcome = await updatePlugin('web', '@deepseek-ai/official-addon')
+  assert.equal(outcome.ok, false)
+  assert.equal(outcome.code, 'official_package')
+  const linkedOutcome = await updatePlugin('web', '@deepseek-ai/official-link', {}, { source: 'remote' })
+  assert.equal(linkedOutcome.ok, false)
+  assert.equal(linkedOutcome.code, 'official_package')
+  assert.equal(fetched, false)
 })
