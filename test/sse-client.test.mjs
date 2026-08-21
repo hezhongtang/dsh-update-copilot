@@ -227,3 +227,23 @@ test('array-like JSON is rejected, not returned as an outcome', async () => {
     (err) => err instanceof Error && /did not answer with a stream or an outcome/.test(err.message),
   )
 })
+
+test('badge status hydration reads the no-store status endpoint into shared UI state', async (t) => {
+  const originalFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (path, options) => {
+    calls.push({ path, options })
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ summary: { behindPlugins: 2 }, generatedAt: '2026-08-22T00:00:00.000Z' }),
+    }
+  }
+  t.after(() => { globalThis.fetch = originalFetch })
+
+  const { loadBadgeStatus, getUiState } = loadBundle().__test
+  await loadBadgeStatus()
+  assert.deepEqual(calls, [{ path: '/dsh-update-copilot/status', options: { cache: 'no-store' } }])
+  assert.deepEqual(getUiState().summary, { behindPlugins: 2 })
+  assert.equal(getUiState().generatedAt, '2026-08-22T00:00:00.000Z')
+})
