@@ -248,7 +248,7 @@ test('badge status hydration reads the no-store status endpoint into shared UI s
   assert.equal(getUiState().generatedAt, '2026-08-22T00:00:00.000Z')
 })
 
-test('compact plugin groups use the aggregate parent state for managed children', () => {
+test('compact plugin sections use the aggregate parent state for managed children', () => {
   const { partitionPluginGroups } = loadBundle().__test
   const currentParent = {
     name: 'ui-suite',
@@ -266,4 +266,6 @@ test('compact plugin groups use the aggregate parent state for managed children'
   assert.deepEqual(groups.behind.map((group) => group.parent.name), ['other-suite'])
   assert.deepEqual(groups.current[0].managed.map((child) => child.name), ['ui-child'])
   assert.deepEqual(groups.behind[0].managed.map((child) => child.name), ['other-child'])
+  assert.equal(groups.behind.some((group) => group.managed.some((child) => child.name === 'ui-child')), false)
+  assert.equal(groups.current.some((group) => group.managed.some((child) => child.name === 'other-child')), false)
 })

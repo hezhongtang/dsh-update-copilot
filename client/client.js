@@ -111,6 +111,8 @@ const zh = {
   logsCollapse: '收起日志',
   empty: '还没有任何记录',
   scanSummary: '{p} 个插件 · {b} 个可更新',
+  updatesAvailableSection: '可更新',
+  upToDateSection: '已最新',
   upToDateFold: '{n} 项已最新',
   badgeTitle: '{n} 个插件可更新',
   hideBadge: '隐藏更新红点',
@@ -239,6 +241,8 @@ const en = {
   logsCollapse: 'Collapse log',
   empty: 'Nothing recorded yet',
   scanSummary: '{p} plugin(s) · {b} update(s) available',
+  updatesAvailableSection: 'Updates available',
+  upToDateSection: 'Up to date',
   upToDateFold: '{n} up to date',
   badgeTitle: '{n} plugin update(s) available',
   hideBadge: 'Hide update badge',
@@ -315,6 +319,8 @@ function injectStyles() {
     '.duc-collapse-title{flex:1;min-width:0}',
     '.duc-chevron-fallback{font-size:12px;line-height:1}',
     '.duc-note{font-size:12px;opacity:.65}',
+    '.duc-section-label{font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--dsw-alias-label-secondary,#6b7280);padding-top:4px}',
+    '.duc-section-body{display:flex;flex-direction:column;gap:0}',
     '.duc-profiles-hint{font-size:12px;opacity:.75;border-left:2px solid rgba(127,127,127,.35);padding:2px 10px}',
     '.duc-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid rgba(127,127,127,.15)}',
     '.duc-row:first-of-type{border-top:none}',
@@ -1187,9 +1193,10 @@ function partitionPluginGroups(plugins) {
 function PluginListCard({ t, plugins, categories, onUpdated, compact = false }) {
   const [showOk, setShowOk] = useState(false)
   const groups = partitionPluginGroups(plugins)
-  const rows = compact
-    ? [...groups.behind, ...(showOk ? groups.current : [])]
-    : plugins.map((parent) => ({ parent, managed: parent.managedProfiles ?? [] }))
+  const renderGroups = (items) => items.map(({ parent, managed }) => h(PluginRow, {
+    t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated,
+  }))
+  const rows = plugins.map((parent) => ({ parent, managed: parent.managedProfiles ?? [] }))
 
   return h('div', { className: 'duc-card' },
     h('div', { className: 'duc-card-title' },
@@ -1197,15 +1204,25 @@ function PluginListCard({ t, plugins, categories, onUpdated, compact = false }) 
       h('span', { className: 'duc-note' }, t('scanSummary', { p: plugins.length, b: groups.behind.length }))),
     plugins.length === 0
       ? h('div', { className: 'duc-note' }, t('noPlugins'))
-      : rows.map(({ parent, managed }) => h(PluginRow, {
-          t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated,
-        })),
-    compact && groups.current.length > 0
-      ? h('button', { type: 'button', className: 'duc-fold', onClick: () => setShowOk(!showOk), 'aria-expanded': showOk },
-          h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
-            h(Chevron, { open: showOk })),
-          t('upToDateFold', { n: groups.current.length }))
-      : null)
+      : compact
+        ? h(React.Fragment, null,
+            h('div', { className: 'duc-section-label' }, t('updatesAvailableSection')),
+            renderGroups(groups.behind),
+            h('button', {
+              type: 'button',
+              className: 'duc-collapse-head',
+              onClick: () => setShowOk(!showOk),
+              'aria-expanded': showOk,
+            },
+              h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
+                h(Chevron, { open: showOk })),
+              h('span', { className: 'duc-collapse-title' }, t('upToDateSection')),
+              h('span', { className: 'duc-note' }, t('upToDateFold', { n: groups.current.length }))),
+            showOk ? h('div', { className: 'duc-section-body' }, renderGroups(groups.current)) : null)
+        : rows.map(({ parent, managed }) => h(PluginRow, {
+            t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated,
+          })),
+    )
 }
 
 /**
