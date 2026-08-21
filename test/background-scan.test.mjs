@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { BACKGROUND_SCAN_INTERVAL_MS, startBackgroundScan } from '../lib/background-scan.js'
+import { BACKGROUND_SCAN_INTERVAL_MS, startBackgroundScan, startBackgroundScanWhenReady } from '../lib/background-scan.js'
 
 function deferred() {
   let resolve
@@ -61,4 +61,48 @@ test('background scheduler logs failures and continues scheduling', async () => 
   assert.equal(warnings.length, 2)
   assert.ok(warnings.every((message) => message.includes('background scan failed: offline')))
   stop()
+})
+
+test('background scheduler starts only after a web host provides lifecycle timers', async () => {
+  let injected
+  const scans = []
+  const timers = []
+  const cleared = []
+  const stop = startBackgroundScanWhenReady({
+    inject: (deps, callback) => {
+      assert.deepEqual(deps, ['webServer', 'timer'])
+      injected = callback
+      return () => { injected = null }
+    },
+    scan: async (force) => { scans.push(force) },
+  })
+
+  assert.deepEqual(scans, [])
+  injected({ webServer: {}, timer: {} })
+  assert.deepEqual(scans, [], 'a web host without lifecycle timers does not start a scheduler')
+
+  injected({
+    webServer: {},
+    timer: {
+      setInterval: (callback, delay) => { timers.push({ callback, delay }); return 'timer-id' },
+      clearInterval: (id) => cleared.push(id),
+    },
+  })
+  assert.deepEqual(scans, [true])
+  assert.equal(timers[0].delay, BACKGROUND_SCAN_INTERVAL_MS)
+  injected({
+    webServer: {},
+    timer: {
+      setInterval: () => { throw new Error('duplicate lifecycle scheduler') },
+      clearInterval: () => {},
+    },
+  })
+  assert.deepEqual(scans, [true], 'a repeated capability callback does not duplicate the scheduler')
+  await Promise.resolve()
+  timers[0].callback()
+  await Promise.resolve()
+  assert.deepEqual(scans, [true, true])
+
+  stop()
+  assert.deepEqual(cleared, ['timer-id'])
 })

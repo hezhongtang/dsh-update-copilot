@@ -90,6 +90,11 @@ test('scan hides official and aggregate-managed dependencies while retaining ind
   const all = await scanAll(true)
   assert.equal(all.summary.plugins, 5)
   assert.equal(all.summary.behindPlugins, 3)
+  assert.equal(all.summary.pluginInstallations, 5)
+  assert.equal(all.summary.uniquePlugins, 5)
+  assert.equal(all.summary.behindInstallations, 3)
+  assert.equal(all.summary.behindPackages, 3)
+  assert.equal(all.summary.behindNames, all.summary.behindPackages)
   assert.ok(all.core.packages.every((row) => row.classification === 'official'))
 })
 

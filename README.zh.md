@@ -27,7 +27,7 @@ DSH 迭代很快，插件生态同样如此。每个 profile 通过 pnpm spec �
 | 🔄 **双通道** | npm registry 版本（完整 semver 比较，含 prerelease）+ git 上游（pinned commit vs HEAD，`link:` 目录走只读 `ls-remote`） |
 | 🧭 **更新要点** | 逐项给出：semver 跨度、风险分级（major → 高、minor → 中、patch → 低）、变更材料——npm 版本列表 / GitHub compare 提交 / Release 说明（正文内联渲染）/ 本地 `git log`；每条材料都可点击跳转（npm 版本页、提交、Release、compare 对比页），每个插件行带 ↗ 直达其仓库——monorepo 子包定位到子目录，解析不出 GitHub 仓库的 npm 插件兜底到其 npm 包页面 |
 | 🤖 **Agent 工具** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update`——对 Agent 说一句「有没有更新」，得到有数据支撑的回答；扫描按包合并（一个包一行），官方包与 aggregate-managed 子项只报告、不独立更新；不传 `profile` 的 update 也只作用于符合独立更新条件的安装 |
-| 🖥 **Web 界面** | 设置按钮旁的侧栏入口会在挂载时补齐徽章，并在启动扫描后重试；后台扫描在启动时执行一次，之后每 30 分钟执行一次。紧凑雷达弹窗落后项优先、已最新折叠；完整页面仍在 设置 → 更新助手。插件跨 profile 合并成一行，带每个 profile 的当前 → 最新版本；aggregate-managed 子项可在父行下展开，只读展示。「更新」和「一键更新全部」只作用于明确列出的合格 profile；更新过程通过 SSE 实时推送进度（解析依赖 / 下载中 / 重试中 / 暂存 / 拉取 / 恢复阶段），直接渲染成每行进度条 |
+| 🖥 **Web 界面** | 仅 Web host 的设置旁侧栏入口会在挂载时补齐徽章，并在启动扫描后重试；后台扫描在启动时执行一次，之后每 30 分钟执行一次。紧凑雷达弹窗落后项优先、已最新折叠；aggregate-managed 子项始终跟随父行，父行已最新时仍在已最新分组。完整页面仍在 设置 → 更新助手。插件跨 profile 合并成一行，带每个 profile 的当前 → 最新版本；aggregate-managed 子项可在父行下展开，只读展示。「更新」和「一键更新全部」只作用于明确列出的合格 profile；更新过程通过 SSE 实时推送进度（解析依赖 / 下载中 / 重试中 / 暂存 / 拉取 / 恢复阶段），直接渲染成每行进度条 |
 | 🛡 **更新护栏** | 同源 POST + 显式 `confirm`、严格目标 allowlist、单并发锁、5 分钟超时；npm/github 通道只走官方 `dsh plugin` CLI，`link:` 本地目录走 git pull（自动暂存 → 拉取 → 恢复），冲突一律交还手动处理；`file:`、官方 `@deepseek-ai/*` 包与 aggregate-managed 子项仍拒绝 |
 | 🌐 **完整双语** | 所有面向用户的文案——面板、弹窗、徽章、更新要点、建议、更新错误——跟随界面语言（中/英）；Agent 工具路径保留稳定英文标识 |
 

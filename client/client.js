@@ -1170,24 +1170,41 @@ function CoreCard({ t, core }) {
  * package. `plugins` is the aggregated list from the scan; `compact` folds the
  * up-to-date rows away (popup mode).
  */
+function partitionPluginGroups(plugins) {
+  const behind = []
+  const current = []
+  for (const parent of plugins) {
+    // Managed rows are deliberately carried by their aggregate parent. Do not
+    // classify them independently: the parent owns the compact section they
+    // appear in, even when a child has stale package metadata of its own.
+    const group = { parent, managed: parent.managedProfiles ?? [] }
+    if (parent.updateAvailable) behind.push(group)
+    else current.push(group)
+  }
+  return { behind, current }
+}
+
 function PluginListCard({ t, plugins, categories, onUpdated, compact = false }) {
   const [showOk, setShowOk] = useState(false)
-  const behindRows = plugins.filter((r) => r.updateAvailable)
-  const okRows = plugins.filter((r) => !r.updateAvailable)
-  const rows = compact ? [...behindRows, ...(showOk ? okRows : [])] : plugins
+  const groups = partitionPluginGroups(plugins)
+  const rows = compact
+    ? [...groups.behind, ...(showOk ? groups.current : [])]
+    : plugins.map((parent) => ({ parent, managed: parent.managedProfiles ?? [] }))
 
   return h('div', { className: 'duc-card' },
     h('div', { className: 'duc-card-title' },
       t('pluginsTitle'), ' ',
-      h('span', { className: 'duc-note' }, t('scanSummary', { p: plugins.length, b: behindRows.length }))),
+      h('span', { className: 'duc-note' }, t('scanSummary', { p: plugins.length, b: groups.behind.length }))),
     plugins.length === 0
       ? h('div', { className: 'duc-note' }, t('noPlugins'))
-      : rows.map((row) => h(PluginRow, { t, row, categories, key: row.name, onUpdated })),
-    compact && okRows.length > 0
+      : rows.map(({ parent, managed }) => h(PluginRow, {
+          t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated,
+        })),
+    compact && groups.current.length > 0
       ? h('button', { type: 'button', className: 'duc-fold', onClick: () => setShowOk(!showOk), 'aria-expanded': showOk },
           h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
             h(Chevron, { open: showOk })),
-          t('upToDateFold', { n: okRows.length }))
+          t('upToDateFold', { n: groups.current.length }))
       : null)
 }
 
@@ -1433,7 +1450,7 @@ function CopilotOverlay({ t }) {
 exports.name = 'dsh-update-copilot'
 // Test seam (see test/sse-client.test.mjs); namespaced so the descriptor's
 // public shape stays exactly { name, inject, apply }.
-exports.__test = { consumeUpdateResponse, loadBadgeStatus, getUiState: () => uiState }
+exports.__test = { consumeUpdateResponse, loadBadgeStatus, getUiState: () => uiState, partitionPluginGroups }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.
 exports.inject = ['slots', 'locale']
