@@ -114,7 +114,7 @@ const zh = {
   updatesAvailableSection: '可更新',
   upToDateSection: '已最新',
   upToDateFold: '{n} 项已最新',
-  badgeTitle: '{n} 个插件可更新',
+  badgeTitle: '{n} 项更新可用',
   hideBadge: '隐藏更新红点',
   hideBadgeDesc: '关闭侧栏按钮上的「可更新数量」徽章；弹窗与本页仍会显示完整信息',
   progressPhase: '{phase}…',
@@ -244,7 +244,7 @@ const en = {
   updatesAvailableSection: 'Updates available',
   upToDateSection: 'Up to date',
   upToDateFold: '{n} up to date',
-  badgeTitle: '{n} plugin update(s) available',
+  badgeTitle: '{n} update(s) available',
   hideBadge: 'Hide update badge',
   hideBadgeDesc: 'Turn off the update-count badge on the sidebar button; the popup and this page keep full details',
   progressPhase: '{phase}…',
@@ -392,7 +392,8 @@ function injectStyles() {
     '.duc-modal-x{margin-left:auto;flex:none;border:none;background:transparent;color:inherit;font-size:14px;line-height:1;cursor:pointer;opacity:.6;padding:5px 7px;border-radius:6px}',
     '.duc-modal-x:hover{opacity:1;background:rgba(127,127,127,.15)}',
     '.duc-modal-body{padding:12px 16px 16px;overflow:auto;display:flex;flex-direction:column;gap:12px}',
-    '.duc-toolbar{display:flex;align-items:center;gap:8px;font-size:12px;opacity:.75}',
+    '.duc-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;opacity:.75}',
+    '.duc-bulk-progress{flex:1 1 180px;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
   ].join('\n')
   // Self-healing replace: a page that kept an older bundle's sheet (same id,
   // possibly without the rules a newer bundle adds) must not block the fresh
@@ -660,7 +661,7 @@ function writeBadgePref(hidden) {
   } catch { /* storage unavailable — in-memory only */ }
 }
 
-let uiState = { open: false, everOpened: false, summary: null, generatedAt: null, hideBadge: readBadgePref() }
+let uiState = { open: false, opener: null, everOpened: false, summary: null, generatedAt: null, hideBadge: readBadgePref() }
 const uiSubs = new Set()
 
 function setUi(patch) {
@@ -1007,7 +1008,11 @@ function UpdateResult({ t, result }) {
  * profile). The only remaining two-step action is the destructive
  * link→remote source switch.
  */
-function PluginRow({ t, row, categories, onUpdated }) {
+function rowActionsDisabled(busy, bulkRunning) {
+  return busy || bulkRunning === true
+}
+
+function PluginRow({ t, row, categories, onUpdated, bulkRunning = false }) {
   const [open, setOpen] = useState(autoBrief && row.updateAvailable === true)
   const [managedOpen, setManagedOpen] = useState(false)
   const [switchConfirming, setSwitchConfirming] = useState(false)
@@ -1024,6 +1029,7 @@ function PluginRow({ t, row, categories, onUpdated }) {
   const managed = row.managedProfiles ?? []
   const hasManaged = managed.length > 0
   const note = row.official ? t('officialNote') : null
+  const actionsDisabled = rowActionsDisabled(busy, bulkRunning)
 
   async function runUpdate() {
     setBusy(true)
@@ -1096,13 +1102,14 @@ function PluginRow({ t, row, categories, onUpdated }) {
           open ? t('hideBrief') : t('brief')) : null,
         canUpdate ? (busy
           ? h('button', { className: 'duc-btn', disabled: true }, t('updating'))
-          : h('button', { className: 'duc-btn primary', onClick: runUpdate }, t('update'))) : null,
+          : h('button', { className: 'duc-btn primary', onClick: runUpdate, disabled: actionsDisabled }, t('update'))) : null,
         switchProfile !== null ? (busy
           ? null
           : h('button', {
               className: `duc-btn ${switchConfirming ? 'danger' : ''}`,
               onClick: () => (switchConfirming ? runSwitch() : setSwitchConfirming(true)),
               onBlur: () => setSwitchConfirming(false),
+              disabled: actionsDisabled,
             }, switchConfirming ? t('confirmSwitchRemote') : t('switchRemote'))) : null)),
     progress !== null ? h('div', { className: 'duc-progress-wrap' },
       h('div', { className: 'duc-progress' },
@@ -1190,11 +1197,11 @@ function partitionPluginGroups(plugins) {
   return { behind, current }
 }
 
-function PluginListCard({ t, plugins, categories, onUpdated, compact = false }) {
+function PluginListCard({ t, plugins, categories, onUpdated, compact = false, bulkRunning = false }) {
   const [showOk, setShowOk] = useState(false)
   const groups = partitionPluginGroups(plugins)
   const renderGroups = (items) => items.map(({ parent, managed }) => h(PluginRow, {
-    t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated,
+    t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated, bulkRunning,
   }))
   const rows = plugins.map((parent) => ({ parent, managed: parent.managedProfiles ?? [] }))
 
@@ -1208,7 +1215,7 @@ function PluginListCard({ t, plugins, categories, onUpdated, compact = false }) 
         ? h(React.Fragment, null,
             h('div', { className: 'duc-section-label' }, t('updatesAvailableSection')),
             renderGroups(groups.behind),
-            h('button', {
+            groups.current.length > 0 ? h('button', {
               type: 'button',
               className: 'duc-collapse-head',
               onClick: () => setShowOk(!showOk),
@@ -1217,10 +1224,10 @@ function PluginListCard({ t, plugins, categories, onUpdated, compact = false }) 
               h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
                 h(Chevron, { open: showOk })),
               h('span', { className: 'duc-collapse-title' }, t('upToDateSection')),
-              h('span', { className: 'duc-note' }, t('upToDateFold', { n: groups.current.length }))),
+              h('span', { className: 'duc-note' }, t('upToDateFold', { n: groups.current.length }))) : null,
             showOk ? h('div', { className: 'duc-section-body' }, renderGroups(groups.current)) : null)
         : rows.map(({ parent, managed }) => h(PluginRow, {
-            t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated,
+            t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated, bulkRunning,
           })),
     )
 }
@@ -1260,7 +1267,8 @@ function useBulkUpdate() {
 function UpdateAllButton({ t, plugins, bulk, runAll }) {
   const hasTargets = plugins.some((p) => p.canAutoUpdate === true)
   if (bulk.running) {
-    return h('span', { className: 'duc-meta' }, t('updatingAll', { i: bulk.index, n: bulk.total, name: bulk.name }))
+    return h('span', { className: 'duc-bulk-progress', title: t('updatingAll', { i: bulk.index, n: bulk.total, name: bulk.name }) },
+      t('updatingAll', { i: bulk.index, n: bulk.total, name: bulk.name }))
   }
   return hasTargets
     ? h('button', { className: 'duc-btn primary', onClick: () => runAll(plugins) }, t('updateAll'))
@@ -1349,7 +1357,7 @@ function CopilotSection({ t }) {
       ? h('div', { className: 'duc-profiles-hint' }, t('profilesHint'))
       : null,
     status !== null
-      ? h(PluginListCard, { t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated })
+      ? h(PluginListCard, { t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated, bulkRunning: bulk.running })
       : null,
     h(LogTail, { t, opsVersion }))
 }
@@ -1383,9 +1391,9 @@ function FooterButton({ t, wide }) {
   return h('button', {
     className: wide === true ? 'duc-foot-btn' : 'duc-foot-btn duc-rail',
     title: showBadge ? t('badgeTitle', { n: behind }) : t('nav'),
-    'aria-label': t('nav'),
+    'aria-label': showBadge ? t('badgeTitle', { n: behind }) : t('nav'),
     'aria-haspopup': 'dialog',
-    onClick: () => setUi({ open: true, everOpened: true }),
+    onClick: (e) => setUi({ open: true, opener: e.currentTarget, everOpened: true }),
   },
     h('span', { className: 'duc-foot-icon' }, RadarIcon()),
     wide === true ? h('span', { className: 'duc-foot-label' }, t('nav')) : null,
@@ -1426,9 +1434,34 @@ function PopupBody({ t }) {
     status !== null ? h(CoreCard, { t, core: status.core }) : null,
     status !== null
       ? h(PluginListCard, {
-          t, plugins: status.plugins, categories: status.categories, compact: true, onUpdated: notifyUpdated,
+          t, plugins: status.plugins, categories: status.categories, compact: true, onUpdated: notifyUpdated, bulkRunning: bulk.running,
         })
       : null)
+}
+
+function trapModalFocus(modal, event, activeElement = document.activeElement) {
+  if (modal === null) return false
+  const focusable = [...modal.querySelectorAll(
+    'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+  )]
+  if (focusable.length === 0) {
+    event.preventDefault()
+    modal.focus()
+    return true
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && (activeElement === modal || activeElement === first)) {
+    event.preventDefault()
+    last.focus()
+    return true
+  }
+  if (!event.shiftKey && activeElement === last) {
+    event.preventDefault()
+    first.focus()
+    return true
+  }
+  return false
 }
 
 function CopilotOverlay({ t }) {
@@ -1439,10 +1472,19 @@ function CopilotOverlay({ t }) {
     if (!ui.open) return undefined
     injectStyles()
     modalRef.current?.focus()
-    const onKey = (e) => { if (e.key === 'Escape') setUi({ open: false }) }
+    const onKey = (e) => {
+      if (e.key === 'Escape') setUi({ open: false })
+      else if (e.key === 'Tab') trapModalFocus(modalRef.current, e)
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [ui.open])
+
+  useEffect(() => {
+    if (ui.open || ui.opener == null) return
+    ui.opener.focus?.()
+    setUi({ opener: null })
+  }, [ui.open, ui.opener])
 
   if (!ui.open) return null
 
@@ -1467,7 +1509,7 @@ function CopilotOverlay({ t }) {
 exports.name = 'dsh-update-copilot'
 // Test seam (see test/sse-client.test.mjs); namespaced so the descriptor's
 // public shape stays exactly { name, inject, apply }.
-exports.__test = { consumeUpdateResponse, loadBadgeStatus, getUiState: () => uiState, partitionPluginGroups }
+exports.__test = { consumeUpdateResponse, loadBadgeStatus, getUiState: () => uiState, partitionPluginGroups, rowActionsDisabled, trapModalFocus }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.
 exports.inject = ['slots', 'locale']

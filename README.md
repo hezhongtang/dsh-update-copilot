@@ -65,7 +65,7 @@ The **sidebar button beside Settings** opens the compact radar popup (ESC or bac
 
 ## How it works
 
-Every dependency spec is classified into a channel, and each channel has its own comparison. Scans merge the profiles' plugin lists package-centric: the same package installed in `web`, `headless`, and `desktop` appears once, carrying each profile's channel and versions. An aggregate parent declares `dsh.bundle.aggregate: true` in its installed package manifest; `@linxin666/dsh-web-ui-all` remains an aggregate for compatibility when its marker is absent. Its direct dependencies become read-only managed children, with package-name ordering selecting one parent if declarations overlap; aggregate ownership takes precedence over local specs except the locally owned `dsh-tier-router` link. The aggregate row also carries explicit `updatableProfiles`; an update runs only those eligible visible rows. Official `@deepseek-ai/*` packages remain report-only.
+Every dependency spec is classified into a channel, and each channel has its own comparison. Scans merge the profiles' plugin lists package-centric: the same package installed in `web`, `headless`, and `desktop` appears once, carrying each profile's channel and versions. An aggregate is detected automatically when an active profile bundle's contained patch mounts at least two of its production dependencies. Those direct profile dependencies become read-only managed children; overlapping parents choose the largest verified child set, then package name. Local `link:` and `file:` dependencies stay local, and official `@deepseek-ai/*` packages remain report-only. The aggregate row also carries explicit `updatableProfiles`; an update runs only those eligible visible rows.
 
 | Channel | Example spec | Current | Latest |
 |---|---|---|---|
@@ -81,7 +81,7 @@ A `link:` checkout can also be **switched to a remote source**: the copilot repl
 
 ## Security
 
-- The only mutating route is `POST /dsh-update-copilot/update`: same-origin enforced, `confirm: true` required.
+- The only mutating route is `POST /dsh-update-copilot/update`: same-origin and same-transport-scheme checks are enforced, with `confirm: true` required; forwarded scheme headers are not trusted. TLS-terminating proxies may set `DSH_UPDATE_COPILOT_PUBLIC_ORIGIN` to their public HTTP(S) origin; requests must match it exactly, and an invalid value fails closed.
 - Official `@deepseek-ai/*` packages and the dsh core are never auto-updated; the core's upgrade command is displayed, not run.
 - All upstream queries are read-only (`registry.npmjs.org`, `api.github.com`, `git ls-remote`) with hard timeouts; a failed check degrades that one item instead of failing the scan.
 

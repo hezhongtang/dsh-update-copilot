@@ -269,3 +269,26 @@ test('compact plugin sections use the aggregate parent state for managed childre
   assert.equal(groups.behind.some((group) => group.managed.some((child) => child.name === 'ui-child')), false)
   assert.equal(groups.current.some((group) => group.managed.some((child) => child.name === 'other-child')), false)
 })
+
+test('bulk updates disable row actions while preserving the row state', () => {
+  const { rowActionsDisabled } = loadBundle().__test
+  assert.equal(rowActionsDisabled(false, false), false)
+  assert.equal(rowActionsDisabled(true, false), true)
+  assert.equal(rowActionsDisabled(false, true), true)
+})
+
+test('modal focus trap wraps Tab at both boundaries', () => {
+  const { trapModalFocus } = loadBundle().__test
+  const first = { focus: () => { first.focused = true } }
+  const last = { focus: () => { last.focused = true } }
+  const modal = { querySelectorAll: () => [first, last], focus: () => { modal.focused = true } }
+  const forward = { shiftKey: false, preventDefault: () => { forward.prevented = true } }
+  const backward = { shiftKey: true, preventDefault: () => { backward.prevented = true } }
+
+  assert.equal(trapModalFocus(modal, forward, last), true)
+  assert.equal(forward.prevented, true)
+  assert.equal(first.focused, true)
+  assert.equal(trapModalFocus(modal, backward, first), true)
+  assert.equal(backward.prevented, true)
+  assert.equal(last.focused, true)
+})

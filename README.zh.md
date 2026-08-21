@@ -65,7 +65,7 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成更新要点、�
 
 ## 工作原理
 
-每个依赖 spec 先分类到通道，每个通道有自己的比较方式。扫描结果按包跨 profile 合并：同一个包装在 web / headless / desktop，就只出现一行，携带每个 profile 的通道与版本，以及明确的合格更新 profile。聚合父包在其已安装的 package manifest 中声明 `dsh.bundle.aggregate: true`；`@linxin666/dsh-web-ui-all` 缺少该标记时仍按兼容规则视为聚合包。父包的直接依赖会在父行下以只读子项展示；多个父包声明同一子项时按包名排序确定唯一归属。聚合归属优先于本地 spec，唯独本地拥有的 `dsh-tier-router` 链接保持本地。官方 `@deepseek-ai/*` 包只报告，不能独立更新。
+每个依赖 spec 先分类到通道，每个通道有自己的比较方式。扫描结果按包跨 profile 合并：同一个包装在 web / headless / desktop，就只出现一行，携带每个 profile 的通道与版本，以及明确的合格更新 profile。活动 profile bundle 的包内 patch 若挂载至少两个自身生产依赖，便会自动识别为聚合包。匹配的直接 profile 依赖在父行下以只读子项展示；多个父包声明同一子项时，先选已验证子项更多的父包，再按包名确定归属。`link:` 与 `file:` 本地依赖保持本地；官方 `@deepseek-ai/*` 包只报告，不能独立更新。
 
 | 通道 | spec 示例 | 当前版本 | 最新版本 |
 |---|---|---|---|
@@ -81,7 +81,7 @@ npm 通道刻意不信任 `latest` dist-tag：monorepo 子包的这个 tag 常�
 
 ## 安全性
 
-- 唯一的变更路由是 `POST /dsh-update-copilot/update`：强制同源 + 必须显式 `confirm: true`。
+- 唯一的变更路由是 `POST /dsh-update-copilot/update`：强制同源且校验实际传输协议，必须显式 `confirm: true`，不信任转发协议请求头。TLS 终止代理可设置其公开 HTTP(S) origin 至 `DSH_UPDATE_COPILOT_PUBLIC_ORIGIN`；请求必须精确匹配，配置无效时拒绝所有请求。
 - 官方 `@deepseek-ai/*` 包和 dsh 本体绝不自动更新；本体的升级命令只展示、不执行。
 - 所有上游查询均为只读（`registry.npmjs.org`、`api.github.com`、`git ls-remote`）且带硬超时；单项查询失败只降级该项，不影响整体扫描。
 

@@ -18,6 +18,10 @@ function install(profile, name, manifest) {
   writeJson(join(home, 'profiles', profile, 'node_modules', name, 'package.json'), manifest)
 }
 
+function fixtureSpec(kind, profile, name) {
+  return `${kind}:${join(home, 'fixtures', profile, name).replace(/\\/g, '/')}`
+}
+
 test('scan hides official and aggregate-managed dependencies while retaining independent and linked plugins', async (t) => {
   t.after(() => {
     clearScanCache()
@@ -28,23 +32,25 @@ test('scan hides official and aggregate-managed dependencies while retaining ind
   writeJson(join(home, 'profiles', profile, 'package.json'), {
     dependencies: {
       '@deepseek-ai/dsh-web-app': '^1.0.0',
-      '@linxin666/dsh-web-ui-all': '^1.0.0',
-      '@linxin666/managed-ui': '^1.0.0',
-      '@linxin666/skin-whale-song': '^1.0.0',
-      'dsh-better-sidebar': '^1.0.0',
-      'dsh-tier-router': 'link:C:/local/dsh-tier-router',
-      'local-file-plugin': 'file:C:/local/local-file-plugin',
+      '@example/ui-suite': '^1.0.0',
+      '@example/managed-ui': '^1.0.0',
+      '@example/skin': '^1.0.0',
+      'linked-plugin': fixtureSpec('link', profile, 'linked-plugin'),
+      'local-file-plugin': fixtureSpec('file', profile, 'local-file-plugin'),
+      'third-party-plugin': '^1.0.0',
+    },
+    dsh: { profile: { bundles: ['@example/ui-suite'] } },
+  })
+  install(profile, '@example/ui-suite', {
+    version: '1.0.0',
+    dsh: { bundle: { patch: 'bundle.patch.yml' } },
+    dependencies: {
+      '@example/managed-ui': '^1.0.0',
       'third-party-plugin': '^1.0.0',
     },
   })
-  install(profile, '@linxin666/dsh-web-ui-all', {
-    version: '1.0.0',
-    dependencies: {
-      '@linxin666/managed-ui': '^1.0.0',
-      'dsh-tier-router': '^1.0.0',
-    },
-  })
-  for (const name of ['@deepseek-ai/dsh-web-app', '@linxin666/managed-ui', '@linxin666/skin-whale-song', 'dsh-better-sidebar', 'dsh-tier-router', 'local-file-plugin', 'third-party-plugin']) {
+  writeFileSync(join(home, 'profiles', profile, 'node_modules', '@example', 'ui-suite', 'bundle.patch.yml'), '- insert:\n    - name: @example/managed-ui\n    - name: third-party-plugin\n')
+  for (const name of ['@deepseek-ai/dsh-web-app', '@example/managed-ui', '@example/skin', 'linked-plugin', 'local-file-plugin', 'third-party-plugin']) {
     install(profile, name, { version: '1.0.0' })
   }
 
@@ -57,23 +63,21 @@ test('scan hides official and aggregate-managed dependencies while retaining ind
 
   const result = await scanProfile(profile, true)
   assert.deepEqual(result.plugins.map((row) => row.name), [
-    '@linxin666/dsh-web-ui-all',
-    '@linxin666/skin-whale-song',
-    'dsh-tier-router',
+    '@example/skin',
+    '@example/ui-suite',
+    'linked-plugin',
     'local-file-plugin',
-    'third-party-plugin',
   ])
   assert.deepEqual(
     result.plugins.map(({ name, classification }) => ({ name, classification })),
     [
-      { name: '@linxin666/dsh-web-ui-all', classification: 'aggregate' },
-      { name: '@linxin666/skin-whale-song', classification: 'independent' },
-      { name: 'dsh-tier-router', classification: 'local' },
+      { name: '@example/skin', classification: 'independent' },
+      { name: '@example/ui-suite', classification: 'aggregate' },
+      { name: 'linked-plugin', classification: 'local' },
       { name: 'local-file-plugin', classification: 'local' },
-      { name: 'third-party-plugin', classification: 'independent' },
     ],
   )
-  assert.equal(result.plugins.find((row) => row.name === 'dsh-tier-router').kind, 'linked')
+  assert.equal(result.plugins.find((row) => row.name === 'linked-plugin').kind, 'linked')
   assert.equal(result.plugins.find((row) => row.name === 'local-file-plugin').kind, 'file')
   assert.deepEqual(
     result.official.map(({ name, classification }) => ({ name, classification })),
@@ -82,18 +86,18 @@ test('scan hides official and aggregate-managed dependencies while retaining ind
   assert.deepEqual(
     result.managed.map(({ name, classification, managedBy }) => ({ name, classification, managedBy })),
     [
-      { name: '@linxin666/managed-ui', classification: 'aggregate-managed', managedBy: '@linxin666/dsh-web-ui-all' },
-      { name: 'dsh-better-sidebar', classification: 'aggregate-managed', managedBy: '@linxin666/dsh-web-ui-all' },
+      { name: '@example/managed-ui', classification: 'aggregate-managed', managedBy: '@example/ui-suite' },
+      { name: 'third-party-plugin', classification: 'aggregate-managed', managedBy: '@example/ui-suite' },
     ],
   )
-  assert.equal(result.behind, 3)
+  assert.equal(result.behind, 2)
   const all = await scanAll(true)
-  assert.equal(all.summary.plugins, 5)
-  assert.equal(all.summary.behindPlugins, 3)
-  assert.equal(all.summary.pluginInstallations, 5)
-  assert.equal(all.summary.uniquePlugins, 5)
-  assert.equal(all.summary.behindInstallations, 3)
-  assert.equal(all.summary.behindPackages, 3)
+  assert.equal(all.summary.plugins, 4)
+  assert.equal(all.summary.behindPlugins, 2)
+  assert.equal(all.summary.pluginInstallations, 4)
+  assert.equal(all.summary.uniquePlugins, 4)
+  assert.equal(all.summary.behindInstallations, 2)
+  assert.equal(all.summary.behindPackages, 2)
   assert.equal(all.summary.behindNames, all.summary.behindPackages)
   assert.ok(all.core.packages.every((row) => row.classification === 'official'))
 })
@@ -119,9 +123,15 @@ test('package-wide updates honor explicit eligible profiles and never select agg
   })
   writeJson(join(home, 'profiles', 'web', 'package.json'), { dependencies: { 'shared-ui': '^1.0.0' } })
   writeJson(join(home, 'profiles', 'desktop', 'package.json'), {
-    dependencies: { '@linxin666/dsh-web-ui-all': '^1.0.0', 'shared-ui': '^1.0.0' },
+    dependencies: { '@example/ui-suite': '^1.0.0', 'shared-ui': '^1.0.0' },
+    dsh: { profile: { bundles: ['@example/ui-suite'] } },
   })
-  install('desktop', '@linxin666/dsh-web-ui-all', { version: '1.0.0', dependencies: { 'shared-ui': '^1.0.0' } })
+  install('desktop', '@example/ui-suite', {
+    version: '1.0.0',
+    dsh: { bundle: { patch: 'bundle.patch.yml' } },
+    dependencies: { 'shared-ui': '^1.0.0', 'other-child': '^1.0.0' },
+  })
+  writeFileSync(join(home, 'profiles', 'desktop', 'node_modules', '@example', 'ui-suite', 'bundle.patch.yml'), '- insert:\n    - name: shared-ui\n    - name: other-child\n')
 
   const managedOnly = await updatePluginAll('shared-ui', {}, { profiles: ['desktop'] })
   assert.equal(managedOnly.ok, false)

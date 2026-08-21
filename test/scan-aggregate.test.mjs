@@ -97,18 +97,18 @@ test('aggregate rows retain managed children and target only independently updat
   const plugins = aggregateRows([
     {
       profile: 'web',
-      plugins: [row({ name: '@linxin666/dsh-web-ui-all', classification: 'aggregate' })],
-      managed: [row({ name: '@linxin666/managed-ui', classification: 'aggregate-managed', managedBy: '@linxin666/dsh-web-ui-all' })],
+      plugins: [row({ name: '@example/ui-suite', classification: 'aggregate' })],
+      managed: [row({ name: '@example/managed-ui', classification: 'aggregate-managed', managedBy: '@example/ui-suite' })],
     },
     {
       profile: 'desktop',
-      plugins: [row({ name: '@linxin666/dsh-web-ui-all', classification: 'independent' })],
+      plugins: [row({ name: '@example/ui-suite', classification: 'independent' })],
       managed: [],
     },
   ])
   const aggregate = plugins[0]
   assert.deepEqual(aggregate.updatableProfiles, ['web', 'desktop'])
-  assert.deepEqual(aggregate.managedProfiles.map((child) => `${child.profile}/${child.name}`), ['web/@linxin666/managed-ui'])
+  assert.deepEqual(aggregate.managedProfiles.map((child) => `${child.profile}/${child.name}`), ['web/@example/managed-ui'])
 })
 
 test('mixed independent and aggregate-managed package rows only target the independent profile', () => {
@@ -116,10 +116,10 @@ test('mixed independent and aggregate-managed package rows only target the indep
     { profile: 'web', plugins: [row({ name: 'shared-ui', classification: 'independent' })], managed: [] },
     {
       profile: 'desktop',
-      plugins: [row({ name: '@linxin666/dsh-web-ui-all', classification: 'aggregate' })],
-      managed: [row({ name: 'shared-ui', classification: 'aggregate-managed', managedBy: '@linxin666/dsh-web-ui-all' })],
+      plugins: [row({ name: '@example/ui-suite', classification: 'aggregate' })],
+      managed: [row({ name: 'shared-ui', classification: 'aggregate-managed', managedBy: '@example/ui-suite' })],
     },
   ])
   assert.deepEqual(plugins.find((plugin) => plugin.name === 'shared-ui').updatableProfiles, ['web'])
-  assert.equal(plugins.find((plugin) => plugin.name === '@linxin666/dsh-web-ui-all').managedProfiles[0].profile, 'desktop')
+  assert.equal(plugins.find((plugin) => plugin.name === '@example/ui-suite').managedProfiles[0].profile, 'desktop')
 })
