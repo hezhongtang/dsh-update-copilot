@@ -5,7 +5,7 @@
 [![Zero build](https://img.shields.io/badge/zero--build-no%20bundler-2EA44F?style=flat-square)](lib)
 [![GitHub stars](https://img.shields.io/github/stars/hezhongtang/dsh-update-copilot?style=flat-square&logo=github)](https://github.com/hezhongtang/dsh-update-copilot/stargazers)
 
-**An update copilot for [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh): tracks the dsh core, shipped bundles, and every installed plugin — merged package-centric across all profiles, with one-click updates. The update command is identical for every profile, so the radar never makes you pick one.**
+**An update copilot for [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh): tracks the dsh core, shipped bundles, and every installed plugin — merged package-centric across all profiles, with one-click updates for eligible independently owned installs.**
 
 <p align="center">
   <img src="assets/popup.png" width="480" alt="The Update Copilot popup: core packages, per-plugin rows behind-first, up-to-date rows folded away." />
@@ -26,9 +26,9 @@ This plugin takes the middle path: **detect everything, summarize what changed, 
 | 🔭 **Full radar** | dsh core + shipped bundles (`dsh-base`, `dsh-web-app`) + every profile's plugin dependencies, in one scan |
 | 🔄 **Dual channel** | npm registry versions (full semver compare, prerelease-aware) and git upstreams (pinned-commit vs HEAD, `link:` checkouts via read-only `ls-remote`) |
 | 🧭 **Update highlights** | Per-item: semver distance, risk level (major → high, minor → medium, patch → low), changelog material — npm versions between yours and latest, GitHub compare commits, release notes (with their body rendered inline), or local `git log`; every artifact links out (npm version pages, commits, releases, compare views) and every row carries a ↗ to its repository — monorepo sub-packages link to their subdirectory, npm plugins without a resolvable GitHub repository fall back to their npm package page |
-| 🤖 **Agent tools** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update` — ask your agent *"any updates?"* and get an honest, data-backed answer. Scans are package-centric (one row per package, merged across profiles) and `profile` is optional on brief/update: without it, a brief covers every profile that has the package, and an update runs the identical command in all of them |
+| 🤖 **Agent tools** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update` — ask your agent *"any updates?"* and get an honest, data-backed answer. Scans are package-centric (one row per package, merged across profiles); aggregate-managed children and official packages are report-only, while an update targets only eligible independently owned profile rows |
 | 🖥 **Web surfaces** | A sidebar trigger beside Settings (with a lazy badge: the behind-plugin count appears only after the first popup open — no background polling; the badge can be turned off in settings for a quiet sidebar) opens a compact popup — behind rows first, up-to-date rows folded; the full page lives on in Settings → Update Copilot. Plugins are merged across profiles into one row per package, each installed profile's current → latest listed inline; one click on **Update** updates the package in every profile that has it, and a toolbar **Update all** does the same for every outdated package in sequence. Updates stream live progress over SSE (resolving / downloading / retrying / stash / pull / restore phases) straight into a per-row progress bar |
-| 🛡 **Update guardrails** | Same-origin POST + explicit `confirm`, strict target allowlist, single-flight lock, 5-minute timeout; npm/github specs run only through the official `dsh plugin` CLI, `link:` checkouts update via git pull in their own directory (auto-stash → pull → restore; conflicts are always handed back for manual handling), `file:` and official `@deepseek-ai/*` installs are refused |
+| 🛡 **Update guardrails** | Same-origin POST + explicit `confirm`, strict target allowlist, single-flight lock, 5-minute timeout; npm/github specs run only through the official `dsh plugin` CLI, `link:` checkouts update via git pull in their own directory (auto-stash → pull → restore; conflicts are always handed back for manual handling), `file:`, official `@deepseek-ai/*`, and aggregate-managed installs are refused |
 | 🌐 **Fully bilingual** | Every user-facing string — panel, popup, badges, update highlights, recommendations, update errors — follows the UI language (zh/en); the agent tool path keeps stable English identifiers |
 
 ## Install
@@ -65,7 +65,7 @@ The **sidebar button beside Settings** opens the compact radar popup (ESC or bac
 
 ## How it works
 
-Every dependency spec is classified into a channel, and each channel has its own comparison. Scans merge the profiles' plugin lists package-centric: the same package installed in `web`, `headless`, and `desktop` appears once, carrying each profile's channel and versions. Because the update command — `dsh plugin --profile <p> add <target>` — is identical for every profile, an update never needs to pick one: the copilot runs it in every profile that has the package.
+Every dependency spec is classified into a channel, and each channel has its own comparison. Scans merge the profiles' plugin lists package-centric: the same package installed in `web`, `headless`, and `desktop` appears once, carrying each profile's channel and versions. The aggregate row also carries explicit `updatableProfiles`; an update runs only those eligible visible rows. Official `@deepseek-ai/*` packages are report-only, and children managed by `@linxin666/dsh-web-ui-all` remain read-only disclosures beneath their aggregate parent.
 
 | Channel | Example spec | Current | Latest |
 |---|---|---|---|

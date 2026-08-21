@@ -6,14 +6,12 @@ var module = { exports: {} }; var exports = module.exports;
  * dsh-update-copilot client.
  *
  * Three seats:
- *  - Settings section: the full update radar page (core + every installed
- *    plugin, merged across profiles — one row per package, one-click update
- *    that runs the identical command in every profile that has the package,
- *    plus an "update all" toolbar action; inline update highlights; op log).
- *  - sidebar.footer.action: a trigger beside the Settings button. Lazy badge:
- *    the behind-plugin count appears only after the popup has been opened at
- *    least once this session — no background polling, upstream APIs are only
- *    touched on user action.
+ *  - Settings section: the full update radar page (core + every profile's
+ *    plugins, merged package-centrically with ownership disclosure, inline
+ *    update highlights, and one-click / bulk updates.
+ *  - sidebar.footer.action: a trigger beside the Settings button. Its badge
+ *    hydrates once after mount and once more after startup scan completion — no
+ *    ongoing background polling.
  *  - shell.overlay: a modal popup with the compact radar — behind rows first,
  *    up-to-date rows folded away; same one-click updates. Opened via the
  *    sidebar button or the `?duc=1` URL parameter (visual-test hook).
@@ -53,8 +51,12 @@ const zh = {
   copyCmd: '复制升级命令',
   copied: '已复制',
   pluginsTitle: '插件（跨 profile 合并）',
-  profilesHint: '同一插件可能装在多个 profile（web / headless / desktop…）；这里按包名合并展示，点「更新」会同步更新所有安装了它的 profile——更新指令对每个 profile 完全一样。',
+  profilesHint: '同一插件可能装在多个 profile（web / headless / desktop…）；这里按包名合并展示，只更新具有独立更新资格的 profile。',
   noPlugins: '没有任何插件依赖',
+  showManaged: '展开 {name} 管理的插件',
+  hideManaged: '收起 {name} 管理的插件',
+  managedBy: '由 {name} 管理',
+  managedNote: '随 {name} 更新，不能单独更新',
   kindNpm: 'npm',
   kindGithub: 'GitHub',
   kindLinked: '本地链接',
@@ -177,8 +179,12 @@ const en = {
   copyCmd: 'Copy upgrade command',
   copied: 'Copied',
   pluginsTitle: 'Plugins (merged across profiles)',
-  profilesHint: 'A package may be installed in several profiles (web / headless / desktop…). Rows are merged by package name; one click on Update synchronizes the package in every profile that has it — the update command is identical for all profiles.',
+  profilesHint: 'A package may be installed in several profiles (web / headless / desktop…). Rows are merged by package name; Update targets only profiles eligible for an independent update.',
   noPlugins: 'No plugin dependencies installed',
+  showManaged: 'Show plugins managed by {name}',
+  hideManaged: 'Hide plugins managed by {name}',
+  managedBy: 'Managed by {name}',
+  managedNote: 'Updated with {name}; not independently updatable',
   kindNpm: 'npm',
   kindGithub: 'GitHub',
   kindLinked: 'linked',
@@ -313,6 +319,12 @@ function injectStyles() {
     '.duc-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid rgba(127,127,127,.15)}',
     '.duc-row:first-of-type{border-top:none}',
     '.duc-name{font-weight:500;word-break:break-all}',
+    '.duc-aggregate-toggle{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;border:1px solid rgba(127,127,127,.3);border-radius:4px;background:transparent;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer}',
+    '.duc-aggregate-toggle:hover{border-color:rgba(127,127,127,.8);color:inherit}',
+    '.duc-aggregate-toggle:focus-visible{outline:1px solid var(--dsw-alias-border-l2,#888);outline-offset:1px}',
+    '.duc-managed-group{margin:0 0 0 10px;padding-left:10px;border-left:2px solid rgba(127,127,127,.22)}',
+    '.duc-managed-group .duc-row{padding:5px 0}',
+    '.duc-managed-chip{opacity:.7;border-style:dashed}',
     '.duc-chip{font-size:11px;border:1px solid rgba(127,127,127,.4);border-radius:4px;padding:0 5px;opacity:.85}',
     '.duc-chip.duc-cat{opacity:.6;border-style:dashed}',
     '.duc-ver{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}',
@@ -516,7 +528,7 @@ async function consumeUpdateResponse(res, onEvent) {
  * update to one profile. Throws on transport errors and on every answer shape
  * `consumeUpdateResponse` classifies as a failure.
  */
-async function streamUpdate(name, onEvent, profile = undefined, source = undefined) {
+async function streamUpdate(name, onEvent, profile = undefined, source = undefined, profiles = undefined) {
   const res = await fetch('/dsh-update-copilot/update', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -525,6 +537,7 @@ async function streamUpdate(name, onEvent, profile = undefined, source = undefin
       confirm: true,
       ...(profile !== undefined && profile !== '' ? { profile } : {}),
       ...(source !== undefined ? { source } : {}),
+      ...(Array.isArray(profiles) ? { profiles } : {}),
     }),
     cache: 'no-store',
   })
@@ -620,7 +633,7 @@ function mountSettingsNavIconPatch() {
 }
 
 // ---------------------------------------------------------------------------
-// Shared cross-seat UI state: popup open flag + the lazy badge summary.
+// Shared cross-seat UI state: popup open flag + the badge summary.
 // useSyncExternalStore contract: immutable snapshots, notify on replace.
 // ---------------------------------------------------------------------------
 
@@ -664,6 +677,14 @@ function useUi() {
   // Third arg = getServerSnapshot: identical to the client snapshot, which
   // keeps the component server-renderable (harmless in the browser).
   return useSyncExternalStore(subscribeUi, () => uiState, () => uiState)
+}
+
+function loadBadgeStatus() {
+  return api('/dsh-update-copilot/status')
+    .then((data) => {
+      setUi({ summary: data.summary, generatedAt: data.generatedAt })
+      return data
+    })
 }
 
 /** One scan-data owner shared by the settings page and the popup. */
@@ -982,6 +1003,7 @@ function UpdateResult({ t, result }) {
  */
 function PluginRow({ t, row, categories, onUpdated }) {
   const [open, setOpen] = useState(autoBrief && row.updateAvailable === true)
+  const [managedOpen, setManagedOpen] = useState(false)
   const [switchConfirming, setSwitchConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
@@ -993,6 +1015,8 @@ function PluginRow({ t, row, categories, onUpdated }) {
   const switchProfile = row.profiles.length === 1 && row.profiles[0].canSwitch === true
     ? row.profiles[0].profile
     : null
+  const managed = row.managedProfiles ?? []
+  const hasManaged = managed.length > 0
   const note = row.official ? t('officialNote') : null
 
   async function runUpdate() {
@@ -1004,7 +1028,7 @@ function PluginRow({ t, row, categories, onUpdated }) {
         if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
         else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
-      })
+      }, undefined, undefined, row.updatableProfiles)
       setResult(outcome)
       if (outcome.ok && outcome.changed) onUpdated(outcome)
     } catch (e) {
@@ -1041,6 +1065,14 @@ function PluginRow({ t, row, categories, onUpdated }) {
     h('div', { className: 'duc-row' },
       h('span', { className: 'duc-name' }, row.name),
       h(RepoLink, { t, repo: row.repo, repoUrl: row.repoUrl, npmName: row.profiles.some((p) => p.kind === 'npm') ? row.name : undefined }),
+      hasManaged ? h('button', {
+        type: 'button',
+        className: 'duc-aggregate-toggle',
+        onClick: () => setManagedOpen(!managedOpen),
+        'aria-expanded': managedOpen,
+        'aria-label': t(managedOpen ? 'hideManaged' : 'showManaged', { name: row.name }),
+        title: t(managedOpen ? 'hideManaged' : 'showManaged', { name: row.name }),
+      }, h('span', { 'aria-hidden': 'true' }, h(Chevron, { open: managedOpen }))) : null,
       h(CategoryChip, { category: row.category, categories }),
       h('span', { className: 'duc-ver' },
         row.profiles.map((p) => h('span', {
@@ -1077,7 +1109,13 @@ function PluginRow({ t, row, categories, onUpdated }) {
       h('span', { className: 'duc-progress-label' },
         progress.percent !== null ? `${progress.percent}%` : t('progressPhase', { phase: t(`progress_${progress.phase}`) }))) : null,
     result !== null ? h(UpdateResult, { t, result }) : null,
-    open ? h(BriefPanel, { t, name: row.name }) : null)
+    open ? h(BriefPanel, { t, name: row.name }) : null,
+    hasManaged && managedOpen ? h('div', { className: 'duc-managed-group' },
+      managed.map((child) => h('div', { className: 'duc-row', key: `${child.profile}/${child.name}` },
+        h('span', { className: 'duc-name' }, child.name),
+        h('span', { className: 'duc-chip duc-managed-chip' }, t('managedBy', { name: child.managedBy })),
+        h('span', { className: 'duc-ver' }, `${child.profile}: ${shortVer(child.current)}`),
+        h('span', { className: 'duc-note' }, t('managedNote', { name: child.managedBy }))))) : null)
 }
 
 function CoreCard({ t, core }) {
@@ -1170,7 +1208,7 @@ function useBulkUpdate() {
     for (let i = 0; i < targets.length; i += 1) {
       setBulk({ running: true, index: i + 1, total: targets.length, name: targets[i].name })
       try {
-        results.push({ name: targets[i].name, outcome: await streamUpdate(targets[i].name, () => {}) })
+        results.push({ name: targets[i].name, outcome: await streamUpdate(targets[i].name, () => {}, undefined, undefined, targets[i].updatableProfiles) })
       } catch (e) {
         results.push({ name: targets[i].name, outcome: { ok: false, error: String(e.message ?? e) } })
       }
@@ -1289,8 +1327,24 @@ function CopilotSection({ t }) {
 function FooterButton({ t, wide }) {
   const ui = useUi()
   useEffect(() => { injectStyles() }, [])
-  const behind = ui.summary !== null ? ui.summary.behindPlugins : 0
-  const showBadge = ui.everOpened && behind > 0 && ui.hideBadge !== true
+  useEffect(() => {
+    let cancelled = false
+    const refresh = () => {
+      loadBadgeStatus().catch(() => {})
+    }
+    refresh()
+    // The host starts its forced background scan during boot. A second bounded
+    // read picks up its cache result without turning the launcher into a poller.
+    const retry = setTimeout(() => { if (!cancelled) refresh() }, 1500)
+    return () => {
+      cancelled = true
+      clearTimeout(retry)
+    }
+  }, [])
+  const behind = ui.summary !== null
+    ? (ui.summary.behindPlugins ?? 0) + (ui.summary.behindCore ?? 0)
+    : 0
+  const showBadge = behind > 0 && ui.hideBadge !== true
 
   return h('button', {
     className: wide === true ? 'duc-foot-btn' : 'duc-foot-btn duc-rail',
@@ -1379,7 +1433,7 @@ function CopilotOverlay({ t }) {
 exports.name = 'dsh-update-copilot'
 // Test seam (see test/sse-client.test.mjs); namespaced so the descriptor's
 // public shape stays exactly { name, inject, apply }.
-exports.__test = { consumeUpdateResponse }
+exports.__test = { consumeUpdateResponse, loadBadgeStatus, getUiState: () => uiState }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.
 exports.inject = ['slots', 'locale']
@@ -1435,10 +1489,7 @@ exports.apply = function apply(ctx) {
         setUi({ open: true, everOpened: true })
       } else if (mode === 'badge') {
         setUi({ everOpened: true, ...(params.get('hide') === '1' ? { hideBadge: true } : {}) })
-        fetch('/dsh-update-copilot/status', { cache: 'no-store' })
-          .then((res) => res.json())
-          .then((data) => setUi({ summary: data.summary, generatedAt: data.generatedAt }))
-          .catch(() => {})
+        loadBadgeStatus().catch(() => {})
       } else if (mode === 'settings') {
         let tries = 0
         let selectedUs = false

@@ -92,3 +92,34 @@ test('official flag is sticky across profiles', () => {
   ])
   assert.equal(plugins[0].official, true)
 })
+
+test('aggregate rows retain managed children and target only independently updatable profiles', () => {
+  const plugins = aggregateRows([
+    {
+      profile: 'web',
+      plugins: [row({ name: '@linxin666/dsh-web-ui-all', classification: 'aggregate' })],
+      managed: [row({ name: '@linxin666/managed-ui', classification: 'aggregate-managed', managedBy: '@linxin666/dsh-web-ui-all' })],
+    },
+    {
+      profile: 'desktop',
+      plugins: [row({ name: '@linxin666/dsh-web-ui-all', classification: 'independent' })],
+      managed: [],
+    },
+  ])
+  const aggregate = plugins[0]
+  assert.deepEqual(aggregate.updatableProfiles, ['web', 'desktop'])
+  assert.deepEqual(aggregate.managedProfiles.map((child) => `${child.profile}/${child.name}`), ['web/@linxin666/managed-ui'])
+})
+
+test('mixed independent and aggregate-managed package rows only target the independent profile', () => {
+  const plugins = aggregateRows([
+    { profile: 'web', plugins: [row({ name: 'shared-ui', classification: 'independent' })], managed: [] },
+    {
+      profile: 'desktop',
+      plugins: [row({ name: '@linxin666/dsh-web-ui-all', classification: 'aggregate' })],
+      managed: [row({ name: 'shared-ui', classification: 'aggregate-managed', managedBy: '@linxin666/dsh-web-ui-all' })],
+    },
+  ])
+  assert.deepEqual(plugins.find((plugin) => plugin.name === 'shared-ui').updatableProfiles, ['web'])
+  assert.equal(plugins.find((plugin) => plugin.name === '@linxin666/dsh-web-ui-all').managedProfiles[0].profile, 'desktop')
+})
