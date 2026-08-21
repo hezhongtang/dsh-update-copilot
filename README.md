@@ -65,7 +65,7 @@ The **sidebar button beside Settings** opens the compact radar popup (ESC or bac
 
 ## How it works
 
-Every dependency spec is classified into a channel, and each channel has its own comparison. Scans merge the profiles' plugin lists package-centric: the same package installed in `web`, `headless`, and `desktop` appears once, carrying each profile's channel and versions. The aggregate row also carries explicit `updatableProfiles`; an update runs only those eligible visible rows. Official `@deepseek-ai/*` packages are report-only, and children managed by `@linxin666/dsh-web-ui-all` remain read-only disclosures beneath their aggregate parent.
+Every dependency spec is classified into a channel, and each channel has its own comparison. Scans merge the profiles' plugin lists package-centric: the same package installed in `web`, `headless`, and `desktop` appears once, carrying each profile's channel and versions. An aggregate parent declares `dsh.bundle.aggregate: true` in its installed package manifest; `@linxin666/dsh-web-ui-all` remains an aggregate for compatibility when its marker is absent. Its direct dependencies become read-only managed children, with package-name ordering selecting one parent if declarations overlap; aggregate ownership takes precedence over local specs except the locally owned `dsh-tier-router` link. The aggregate row also carries explicit `updatableProfiles`; an update runs only those eligible visible rows. Official `@deepseek-ai/*` packages remain report-only.
 
 | Channel | Example spec | Current | Latest |
 |---|---|---|---|

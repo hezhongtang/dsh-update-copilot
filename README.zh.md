@@ -65,7 +65,7 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成更新要点、�
 
 ## 工作原理
 
-每个依赖 spec 先分类到通道，每个通道有自己的比较方式。扫描结果按包跨 profile 合并：同一个包装在 web / headless / desktop，就只出现一行，携带每个 profile 的通道与版本，以及明确的合格更新 profile。官方 `@deepseek-ai/*` 包只报告；由 `@linxin666/dsh-web-ui-all` 管理的子项在父行下以只读方式展开，不能独立更新。
+每个依赖 spec 先分类到通道，每个通道有自己的比较方式。扫描结果按包跨 profile 合并：同一个包装在 web / headless / desktop，就只出现一行，携带每个 profile 的通道与版本，以及明确的合格更新 profile。聚合父包在其已安装的 package manifest 中声明 `dsh.bundle.aggregate: true`；`@linxin666/dsh-web-ui-all` 缺少该标记时仍按兼容规则视为聚合包。父包的直接依赖会在父行下以只读子项展示；多个父包声明同一子项时按包名排序确定唯一归属。聚合归属优先于本地 spec，唯独本地拥有的 `dsh-tier-router` 链接保持本地。官方 `@deepseek-ai/*` 包只报告，不能独立更新。
 
 | 通道 | spec 示例 | 当前版本 | 最新版本 |
 |---|---|---|---|
