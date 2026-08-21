@@ -57,6 +57,14 @@ const zh = {
   hideManaged: '收起 {name} 管理的插件',
   managedBy: '由 {name} 管理',
   managedNote: '随 {name} 更新，不能单独更新',
+  mountedBy: '由 {name} 挂载（独立）',
+  mounts: '挂载独立插件：{names}',
+  showMounted: '展开 {name} 挂载的独立插件',
+  hideMounted: '收起 {name} 挂载的独立插件',
+  updateBundle: '更新 bundle',
+  updatingBundle: '正在更新 bundle {i}/{n}：{name}',
+  bundleUpdated: '✓ bundle 更新完成',
+  bundleFailed: '{n} 项更新失败',
   kindNpm: 'npm',
   kindGithub: 'GitHub',
   kindLinked: '本地链接',
@@ -187,6 +195,14 @@ const en = {
   hideManaged: 'Hide plugins managed by {name}',
   managedBy: 'Managed by {name}',
   managedNote: 'Updated with {name}; not independently updatable',
+  mountedBy: 'Mounted by {name} (independent)',
+  mounts: 'Mounts independent plugins: {names}',
+  showMounted: 'Show independent plugins mounted by {name}',
+  hideMounted: 'Hide independent plugins mounted by {name}',
+  updateBundle: 'Update bundle',
+  updatingBundle: 'Updating bundle {i}/{n}: {name}',
+  bundleUpdated: '✓ Bundle update finished',
+  bundleFailed: '{n} update(s) failed',
   kindNpm: 'npm',
   kindGithub: 'GitHub',
   kindLinked: 'linked',
@@ -331,6 +347,9 @@ function injectStyles() {
     '.duc-managed-group{margin:0 0 0 10px;padding-left:10px;border-left:2px solid rgba(127,127,127,.22)}',
     '.duc-managed-group .duc-row{padding:5px 0}',
     '.duc-managed-chip{opacity:.7;border-style:dashed}',
+    '.duc-mount-chip{opacity:.72;border-style:dotted}',
+    '.duc-mounted-group{margin:0 0 0 10px;padding-left:10px;border-left:2px solid rgba(80,140,255,.35)}',
+    '.duc-mounted-group .duc-row{padding:5px 0}',
     '.duc-chip{font-size:11px;border:1px solid rgba(127,127,127,.4);border-radius:4px;padding:0 5px;opacity:.85}',
     '.duc-chip.duc-cat{opacity:.6;border-style:dashed}',
     '.duc-ver{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}',
@@ -1012,9 +1031,45 @@ function rowActionsDisabled(busy, bulkRunning) {
   return busy || bulkRunning === true
 }
 
-function PluginRow({ t, row, categories, onUpdated, bulkRunning = false }) {
+function rowUpdateTarget(row) {
+  return { name: row.name, profiles: row.updatableProfiles ?? [] }
+}
+
+function bundleUpdateTargets(parent, mountedChildren) {
+  const children = []
+  const visit = (nodes) => nodes.forEach((node) => {
+    children.push(node.row)
+    visit(node.children)
+  })
+  visit(mountedChildren)
+  return [parent, ...children]
+    .filter((row) => row.canAutoUpdate === true)
+    .map(rowUpdateTarget)
+}
+
+function mountRelationshipInfo(row) {
+  const profiles = row.profiles ?? []
+  const mountedBy = [...new Set([
+    row.mountedBy,
+    ...profiles.map((profile) => profile.mountedBy),
+  ]
+    .filter((parent) => typeof parent === 'string' && parent !== ''))]
+  const relationships = [
+    ...(row.mounts ?? []),
+    ...(row.relationships ?? []),
+    ...profiles.flatMap((profile) => profile.relationships ?? []),
+  ]
+  const mounts = [...new Map(relationships
+    .filter((relation) => typeof relation?.child === 'string' && relation.child !== '')
+    .map((relation) => [`${relation.profile ?? ''}/${relation.child}`, relation]))
+    .values()]
+  return { mountedBy, mounts }
+}
+
+function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, mountedChildren = [], onRunBundle }) {
   const [open, setOpen] = useState(autoBrief && row.updateAvailable === true)
   const [managedOpen, setManagedOpen] = useState(false)
+  const [mountedOpen, setMountedOpen] = useState(false)
   const [switchConfirming, setSwitchConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
@@ -1028,6 +1083,10 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false }) {
     : null
   const managed = row.managedProfiles ?? []
   const hasManaged = managed.length > 0
+  const hasMounted = mountedChildren.length > 0
+  const bundleTargets = bundleUpdateTargets(row, mountedChildren)
+  const canUpdateBundle = bundleTargets.some((target) => target.name !== row.name)
+  const mountInfo = mountRelationshipInfo(row)
   const note = row.official ? t('officialNote') : null
   const actionsDisabled = rowActionsDisabled(busy, bulkRunning)
 
@@ -1040,7 +1099,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false }) {
         if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
         else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
-      }, undefined, undefined, row.updatableProfiles)
+      }, undefined, undefined, rowUpdateTarget(row).profiles)
       setResult(outcome)
       if (outcome.ok && outcome.changed) onUpdated(outcome)
     } catch (e) {
@@ -1085,7 +1144,17 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false }) {
         'aria-label': t(managedOpen ? 'hideManaged' : 'showManaged', { name: row.name }),
         title: t(managedOpen ? 'hideManaged' : 'showManaged', { name: row.name }),
       }, h('span', { 'aria-hidden': 'true' }, h(Chevron, { open: managedOpen }))) : null,
+      hasMounted ? h('button', {
+        type: 'button',
+        className: 'duc-aggregate-toggle',
+        onClick: () => setMountedOpen(!mountedOpen),
+        'aria-expanded': mountedOpen,
+        'aria-label': t(mountedOpen ? 'hideMounted' : 'showMounted', { name: row.name }),
+        title: t(mountedOpen ? 'hideMounted' : 'showMounted', { name: row.name }),
+      }, h('span', { 'aria-hidden': 'true' }, h(Chevron, { open: mountedOpen }))) : null,
       h(CategoryChip, { category: row.category, categories }),
+      mountInfo.mountedBy.map((parent) => h('span', { className: 'duc-chip duc-mount-chip', key: parent },
+        t('mountedBy', { name: parent }))),
       h('span', { className: 'duc-ver' },
         row.profiles.map((p) => h('span', {
           key: p.profile,
@@ -1096,6 +1165,8 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false }) {
           : `${p.profile}: ${shortVer(p.current)}`))),
       h('span', { className: `duc-badge ${row.updateAvailable ? 'behind' : 'ok'}` },
         row.updateAvailable ? t('behind') : t('upToDate')),
+      mountInfo.mounts.length > 0 ? h('span', { className: 'duc-note' },
+        t('mounts', { names: mountInfo.mounts.map((relation) => relation.child).join(', ') })) : null,
       note !== null ? h('span', { className: 'duc-note' }, note) : null,
       h('span', { className: 'duc-actions' },
         row.updateAvailable ? h('button', { className: 'duc-btn', onClick: () => setOpen(!open), disabled: busy },
@@ -1103,6 +1174,11 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false }) {
         canUpdate ? (busy
           ? h('button', { className: 'duc-btn', disabled: true }, t('updating'))
           : h('button', { className: 'duc-btn primary', onClick: runUpdate, disabled: actionsDisabled }, t('update'))) : null,
+        canUpdateBundle ? h('button', {
+          className: 'duc-btn',
+          onClick: () => onRunBundle?.(row, mountedChildren),
+          disabled: actionsDisabled,
+        }, t('updateBundle')) : null,
         switchProfile !== null ? (busy
           ? null
           : h('button', {
@@ -1123,6 +1199,11 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false }) {
         progress.percent !== null ? `${progress.percent}%` : t('progressPhase', { phase: t(`progress_${progress.phase}`) }))) : null,
     result !== null ? h(UpdateResult, { t, result }) : null,
     open ? h(BriefPanel, { t, name: row.name }) : null,
+    hasMounted && mountedOpen ? h('div', { className: 'duc-mounted-group' },
+      mountedChildren.map((child) => h(PluginRow, {
+        t, row: child.row, categories, key: child.row.name, onUpdated, bulkRunning,
+        mountedChildren: child.children, onRunBundle,
+      }))) : null,
     hasManaged && managedOpen ? h('div', { className: 'duc-managed-group' },
       managed.map((child) => h('div', { className: 'duc-row', key: `${child.profile}/${child.name}` },
         h('span', { className: 'duc-name' }, child.name),
@@ -1184,26 +1265,49 @@ function CoreCard({ t, core }) {
  * up-to-date rows away (popup mode).
  */
 function partitionPluginGroups(plugins) {
+  const mounted = groupMountedRows(plugins)
   const behind = []
   const current = []
-  for (const parent of plugins) {
-    // Managed rows are deliberately carried by their aggregate parent. Do not
-    // classify them independently: the parent owns the compact section they
-    // appear in, even when a child has stale package metadata of its own.
-    const group = { parent, managed: parent.managedProfiles ?? [] }
-    if (parent.updateAvailable) behind.push(group)
+  for (const node of mounted) {
+    const group = { parent: node.row, managed: node.row.managedProfiles ?? [], mountedChildren: node.children }
+    if (nodeIsBehind(node)) behind.push(group)
     else current.push(group)
   }
   return { behind, current }
 }
 
-function PluginListCard({ t, plugins, categories, onUpdated, compact = false, bulkRunning = false }) {
+function groupMountedRows(plugins) {
+  const nodes = new Map(plugins.map((row) => [row.name, { row, children: [] }]))
+  const parents = new Map()
+  for (const parent of plugins) {
+    for (const relation of parent.mounts ?? []) {
+      const child = relation?.child
+      if (typeof child !== 'string' || child === parent.name || !nodes.has(child) || parents.has(child)) continue
+      let cursor = parent.name
+      let cyclic = false
+      while (parents.has(cursor)) {
+        cursor = parents.get(cursor)
+        if (cursor === child) { cyclic = true; break }
+      }
+      if (!cyclic) parents.set(child, parent.name)
+    }
+  }
+  for (const [child, parent] of parents) nodes.get(parent)?.children.push(nodes.get(child))
+  return plugins.filter((row) => !parents.has(row.name)).map((row) => nodes.get(row.name))
+}
+
+function nodeIsBehind(node) {
+  return node.row.updateAvailable === true || node.children.some(nodeIsBehind)
+}
+
+function PluginListCard({ t, plugins, categories, onUpdated, compact = false, bulkRunning = false, bundleRunning = false, onRunBundle }) {
   const [showOk, setShowOk] = useState(false)
   const groups = partitionPluginGroups(plugins)
-  const renderGroups = (items) => items.map(({ parent, managed }) => h(PluginRow, {
-    t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated, bulkRunning,
+  const renderGroups = (items) => items.map(({ parent, managed, mountedChildren }) => h(PluginRow, {
+    t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated,
+    bulkRunning: bulkRunning || bundleRunning, mountedChildren, onRunBundle,
   }))
-  const rows = plugins.map((parent) => ({ parent, managed: parent.managedProfiles ?? [] }))
+  const rows = groupMountedRows(plugins).map((node) => ({ parent: node.row, managed: node.row.managedProfiles ?? [], mountedChildren: node.children }))
 
   return h('div', { className: 'duc-card' },
     h('div', { className: 'duc-card-title' },
@@ -1226,8 +1330,9 @@ function PluginListCard({ t, plugins, categories, onUpdated, compact = false, bu
               h('span', { className: 'duc-collapse-title' }, t('upToDateSection')),
               h('span', { className: 'duc-note' }, t('upToDateFold', { n: groups.current.length }))) : null,
             showOk ? h('div', { className: 'duc-section-body' }, renderGroups(groups.current)) : null)
-        : rows.map(({ parent, managed }) => h(PluginRow, {
-            t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated, bulkRunning,
+        : rows.map(({ parent, managed, mountedChildren }) => h(PluginRow, {
+            t, row: { ...parent, managedProfiles: managed }, categories, key: parent.name, onUpdated,
+            bulkRunning: bulkRunning || bundleRunning, mountedChildren, onRunBundle,
           })),
     )
 }
@@ -1263,15 +1368,50 @@ function useBulkUpdate() {
   return { bulk, bulkResult, runAll }
 }
 
+function useBundleUpdate() {
+  const [bundle, setBundle] = useState({ running: false, index: 0, total: 0, name: null })
+  const [bundleResult, setBundleResult] = useState(null)
+  const runBundle = useCallback(async (parent, mountedChildren) => {
+    const targets = bundleUpdateTargets(parent, mountedChildren)
+    if (targets.length === 0) return undefined
+    setBundleResult(null)
+    setBundle({ running: true, index: 0, total: targets.length, name: null })
+    const results = []
+    for (let i = 0; i < targets.length; i += 1) {
+      const target = targets[i]
+      setBundle({ running: true, index: i + 1, total: targets.length, name: target.name })
+      try {
+        results.push({ ...target, outcome: await streamUpdate(target.name, () => {}, undefined, undefined, target.profiles) })
+      } catch (e) {
+        results.push({ ...target, outcome: { ok: false, error: String(e.message ?? e) } })
+      }
+    }
+    const failed = results.filter((result) => result.outcome.ok !== true).length
+    setBundle({ running: false, index: 0, total: 0, name: null })
+    setBundleResult({ parent: parent.name, results, failed })
+    return results
+  }, [])
+  return { bundle, bundleResult, runBundle }
+}
+
+function BundleUpdateResult({ t, result }) {
+  return h('div', { className: `duc-note ${result.failed > 0 ? 'duc-error' : ''}` },
+    `${t('bundleUpdated')}${result.failed > 0 ? ` ${t('bundleFailed', { n: result.failed })}` : ''}`,
+    h('ul', { className: 'duc-list' }, result.results.map((item) => h('li', { key: item.name },
+      item.outcome.ok === true
+        ? (item.outcome.changed ? t('itemUpdated', { p: item.name }) : t('itemCurrent', { p: item.name }))
+        : `${t('itemFailed', { p: item.name })} — ${localizedUpdateError(t, item.outcome)}`))))
+}
+
 /** Toolbar actions shared by the settings page and the popup. */
-function UpdateAllButton({ t, plugins, bulk, runAll }) {
+function UpdateAllButton({ t, plugins, bulk, runAll, blocked = false }) {
   const hasTargets = plugins.some((p) => p.canAutoUpdate === true)
   if (bulk.running) {
     return h('span', { className: 'duc-bulk-progress', title: t('updatingAll', { i: bulk.index, n: bulk.total, name: bulk.name }) },
       t('updatingAll', { i: bulk.index, n: bulk.total, name: bulk.name }))
   }
   return hasTargets
-    ? h('button', { className: 'duc-btn primary', onClick: () => runAll(plugins) }, t('updateAll'))
+    ? h('button', { className: 'duc-btn primary', onClick: () => runAll(plugins), disabled: blocked }, t('updateAll'))
     : null
 }
 
@@ -1326,6 +1466,7 @@ function BadgePrefRow({ t }) {
 function CopilotSection({ t }) {
   const { status, error, busy, load, needRestart, opsVersion, notifyUpdated } = useCopilotData(true)
   const { bulk, bulkResult, runAll } = useBulkUpdate()
+  const { bundle, bundleResult, runBundle } = useBundleUpdate()
 
   useEffect(() => { injectStyles() }, [])
 
@@ -1336,6 +1477,13 @@ function CopilotSection({ t }) {
     if (changed) notifyUpdated({ requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
   }
 
+  async function onRunBundle(parent, mountedChildren) {
+    const results = await runBundle(parent, mountedChildren)
+    if (results !== undefined && results.some((result) => result.outcome.changed === true)) {
+      notifyUpdated({ requiresRestart: results.some((result) => result.outcome.requiresRestart === true) })
+    }
+  }
+
   return h('div', { className: 'duc' },
     h('div', { className: 'duc-head' },
       h('h2', null, t('nav')),
@@ -1344,9 +1492,11 @@ function CopilotSection({ t }) {
         `${t('lastScan')}: ${fmtClock(status.generatedAt)}`,
         h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
           busy ? t('rescanning') : t('refresh'))) : null,
-      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll }) : null),
+      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, blocked: bundle.running }) : null),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
+    bundle.running ? h('div', { className: 'duc-bulk-progress', title: t('updatingBundle', bundle) }, t('updatingBundle', bundle)) : null,
+    bundleResult !== null && !bundle.running ? h(BundleUpdateResult, { t, result: bundleResult }) : null,
     error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error} `,
       h('button', { className: 'duc-btn', onClick: () => load(false) }, t('retry'))) : null,
     needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
@@ -1357,7 +1507,10 @@ function CopilotSection({ t }) {
       ? h('div', { className: 'duc-profiles-hint' }, t('profilesHint'))
       : null,
     status !== null
-      ? h(PluginListCard, { t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated, bulkRunning: bulk.running })
+      ? h(PluginListCard, {
+          t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated,
+          bulkRunning: bulk.running, bundleRunning: bundle.running, onRunBundle,
+        })
       : null,
     h(LogTail, { t, opsVersion }))
 }
@@ -1409,12 +1562,20 @@ function FooterButton({ t, wide }) {
 function PopupBody({ t }) {
   const { status, error, busy, load, needRestart, notifyUpdated } = useCopilotData(true)
   const { bulk, bulkResult, runAll } = useBulkUpdate()
+  const { bundle, bundleResult, runBundle } = useBundleUpdate()
 
   async function onRunAll(plugins) {
     const results = await runAll(plugins)
     if (results === undefined) return
     const changed = results.some((r) => r.outcome.changed === true)
     if (changed) notifyUpdated({ requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+  }
+
+  async function onRunBundle(parent, mountedChildren) {
+    const results = await runBundle(parent, mountedChildren)
+    if (results !== undefined && results.some((result) => result.outcome.changed === true)) {
+      notifyUpdated({ requiresRestart: results.some((result) => result.outcome.requiresRestart === true) })
+    }
   }
 
   return h('div', { className: 'duc' },
@@ -1425,16 +1586,19 @@ function PopupBody({ t }) {
             h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
               busy ? t('rescanning') : t('refresh')))
         : null,
-      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll }) : null),
+      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, blocked: bundle.running }) : null),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
+    bundle.running ? h('div', { className: 'duc-bulk-progress', title: t('updatingBundle', bundle) }, t('updatingBundle', bundle)) : null,
+    bundleResult !== null && !bundle.running ? h(BundleUpdateResult, { t, result: bundleResult }) : null,
     needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
     error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error}`) : null,
     status === null && error === null ? h('div', { className: 'duc-note' }, t('loading')) : null,
     status !== null ? h(CoreCard, { t, core: status.core }) : null,
     status !== null
       ? h(PluginListCard, {
-          t, plugins: status.plugins, categories: status.categories, compact: true, onUpdated: notifyUpdated, bulkRunning: bulk.running,
+          t, plugins: status.plugins, categories: status.categories, compact: true, onUpdated: notifyUpdated,
+          bulkRunning: bulk.running, bundleRunning: bundle.running, onRunBundle,
         })
       : null)
 }
@@ -1509,7 +1673,18 @@ function CopilotOverlay({ t }) {
 exports.name = 'dsh-update-copilot'
 // Test seam (see test/sse-client.test.mjs); namespaced so the descriptor's
 // public shape stays exactly { name, inject, apply }.
-exports.__test = { consumeUpdateResponse, loadBadgeStatus, getUiState: () => uiState, partitionPluginGroups, rowActionsDisabled, trapModalFocus }
+exports.__test = {
+  consumeUpdateResponse,
+  loadBadgeStatus,
+  getUiState: () => uiState,
+  partitionPluginGroups,
+  groupMountedRows,
+  rowActionsDisabled,
+  rowUpdateTarget,
+  bundleUpdateTargets,
+  mountRelationshipInfo,
+  trapModalFocus,
+}
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.
 exports.inject = ['slots', 'locale']

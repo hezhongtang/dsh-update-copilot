@@ -63,18 +63,22 @@ test('scan hides official and aggregate-managed dependencies while retaining ind
 
   const result = await scanProfile(profile, true)
   assert.deepEqual(result.plugins.map((row) => row.name), [
+    '@example/managed-ui',
     '@example/skin',
     '@example/ui-suite',
     'linked-plugin',
     'local-file-plugin',
+    'third-party-plugin',
   ])
   assert.deepEqual(
     result.plugins.map(({ name, classification }) => ({ name, classification })),
     [
+      { name: '@example/managed-ui', classification: 'independent' },
       { name: '@example/skin', classification: 'independent' },
       { name: '@example/ui-suite', classification: 'aggregate' },
       { name: 'linked-plugin', classification: 'local' },
       { name: 'local-file-plugin', classification: 'local' },
+      { name: 'third-party-plugin', classification: 'independent' },
     ],
   )
   assert.equal(result.plugins.find((row) => row.name === 'linked-plugin').kind, 'linked')
@@ -83,22 +87,24 @@ test('scan hides official and aggregate-managed dependencies while retaining ind
     result.official.map(({ name, classification }) => ({ name, classification })),
     [{ name: '@deepseek-ai/dsh-web-app', classification: 'official' }],
   )
-  assert.deepEqual(
-    result.managed.map(({ name, classification, managedBy }) => ({ name, classification, managedBy })),
-    [
-      { name: '@example/managed-ui', classification: 'aggregate-managed', managedBy: '@example/ui-suite' },
-      { name: 'third-party-plugin', classification: 'aggregate-managed', managedBy: '@example/ui-suite' },
-    ],
-  )
-  assert.equal(result.behind, 2)
+  assert.deepEqual(result.managed, [])
+  assert.deepEqual(result.relationships, [
+    { parent: '@example/ui-suite', child: '@example/managed-ui', evidence: 'patch-insert+production-dependency' },
+    { parent: '@example/ui-suite', child: 'third-party-plugin', evidence: 'patch-insert+production-dependency' },
+  ])
+  assert.equal(result.behind, 4)
   const all = await scanAll(true)
-  assert.equal(all.summary.plugins, 4)
-  assert.equal(all.summary.behindPlugins, 2)
-  assert.equal(all.summary.pluginInstallations, 4)
-  assert.equal(all.summary.uniquePlugins, 4)
-  assert.equal(all.summary.behindInstallations, 2)
-  assert.equal(all.summary.behindPackages, 2)
+  assert.equal(all.summary.plugins, 6)
+  assert.equal(all.summary.behindPlugins, 4)
+  assert.equal(all.summary.pluginInstallations, 6)
+  assert.equal(all.summary.uniquePlugins, 6)
+  assert.equal(all.summary.behindInstallations, 4)
+  assert.equal(all.summary.behindPackages, 4)
   assert.equal(all.summary.behindNames, all.summary.behindPackages)
+  assert.deepEqual(all.plugins.find((row) => row.name === '@example/ui-suite').mounts, [
+    { profile: 'web', parent: '@example/ui-suite', child: '@example/managed-ui', evidence: 'patch-insert+production-dependency' },
+    { profile: 'web', parent: '@example/ui-suite', child: 'third-party-plugin', evidence: 'patch-insert+production-dependency' },
+  ])
   assert.ok(all.core.packages.every((row) => row.classification === 'official'))
 })
 
@@ -123,7 +129,7 @@ test('package-wide updates honor explicit eligible profiles and never select agg
   })
   writeJson(join(home, 'profiles', 'web', 'package.json'), { dependencies: { 'shared-ui': '^1.0.0' } })
   writeJson(join(home, 'profiles', 'desktop', 'package.json'), {
-    dependencies: { '@example/ui-suite': '^1.0.0', 'shared-ui': '^1.0.0' },
+    dependencies: { '@example/ui-suite': '^1.0.0', 'shared-ui': fixtureSpec('link', 'desktop', 'shared-ui') },
     dsh: { profile: { bundles: ['@example/ui-suite'] } },
   })
   install('desktop', '@example/ui-suite', {
@@ -133,7 +139,10 @@ test('package-wide updates honor explicit eligible profiles and never select agg
   })
   writeFileSync(join(home, 'profiles', 'desktop', 'node_modules', '@example', 'ui-suite', 'bundle.patch.yml'), '- insert:\n    - name: shared-ui\n    - name: other-child\n')
 
-  const managedOnly = await updatePluginAll('shared-ui', {}, { profiles: ['desktop'] })
-  assert.equal(managedOnly.ok, false)
-  assert.equal(managedOnly.code, 'not_installed')
+  const childMetadata = (await scanProfile('desktop', true)).plugins.find((row) => row.name === 'shared-ui')
+  assert.equal(childMetadata.classification, 'local')
+  assert.equal(childMetadata.mountedBy, '@example/ui-suite')
+  const childUpdate = await updatePluginAll('shared-ui', {}, { profiles: ['desktop'] })
+  assert.equal(childUpdate.profileCount, 1)
+  assert.notEqual(childUpdate.code, 'not_installed')
 })

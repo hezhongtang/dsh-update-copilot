@@ -18,7 +18,7 @@ function install(profile, name, manifest) {
 }
 
 function ownership(profile, deps) {
-  return profileDependencyMetadata(profile, deps).map(({ name, classification, managedBy }) => ({ name, classification, ...(managedBy === undefined ? {} : { managedBy }) }))
+  return profileDependencyMetadata(profile, deps).map(({ name, classification, mountedBy }) => ({ name, classification, ...(mountedBy === undefined ? {} : { mountedBy }) }))
 }
 
 test('discovers active multi-child aggregates and rejects ordinary, inactive, and one-child wrappers', (t) => {
@@ -38,11 +38,11 @@ test('discovers active multi-child aggregates and rejects ordinary, inactive, an
   writeFileSync(join(home, 'profiles', 'generic', 'node_modules', '@example', 'ui-suite', 'bundle.patch.yml'), '- insert:\n    - name: suite-child-a\n    - name: suite-child-b\n    - name: @deepseek-ai/official-child\n')
   assert.deepEqual(ownership('generic', generic), [
     { name: '@example/ui-suite', classification: 'aggregate' },
-    { name: 'suite-child-a', classification: 'aggregate-managed', managedBy: '@example/ui-suite' },
-    { name: 'suite-child-b', classification: 'aggregate-managed', managedBy: '@example/ui-suite' },
-    { name: '@deepseek-ai/official-child', classification: 'official' },
+    { name: 'suite-child-a', classification: 'independent', mountedBy: '@example/ui-suite' },
+    { name: 'suite-child-b', classification: 'independent', mountedBy: '@example/ui-suite' },
+    { name: '@deepseek-ai/official-child', classification: 'official', mountedBy: '@example/ui-suite' },
   ])
-  assert.deepEqual(visibleProfileDeps('generic', generic).map(([name]) => name), ['@example/ui-suite'])
+  assert.deepEqual(visibleProfileDeps('generic', generic).map(([name]) => name), ['@example/ui-suite', 'suite-child-a', 'suite-child-b'])
 
   const ordinary = { 'dependency-rich-plugin': '^1.0.0', 'ordinary-child': '^1.0.0' }
   writeJson(join(home, 'profiles', 'ordinary', 'package.json'), { dependencies: ordinary, dsh: { profile: { bundles: ['dependency-rich-plugin'] } } })
@@ -85,10 +85,10 @@ test('discovers active multi-child aggregates and rejects ordinary, inactive, an
   writeFileSync(join(home, 'profiles', 'precedence', 'node_modules', 'suite', 'bundle.patch.yml'), '- insert:\n    - name: remote-child\n    - name: local-link-child\n    - name: local-file-child\n    - name: @deepseek-ai/official-child\n')
   assert.deepEqual(ownership('precedence', precedence), [
     { name: 'suite', classification: 'aggregate' },
-    { name: 'remote-child', classification: 'aggregate-managed', managedBy: 'suite' },
-    { name: 'local-link-child', classification: 'local' },
-    { name: 'local-file-child', classification: 'local' },
-    { name: '@deepseek-ai/official-child', classification: 'official' },
+    { name: 'remote-child', classification: 'independent', mountedBy: 'suite' },
+    { name: 'local-link-child', classification: 'local', mountedBy: 'suite' },
+    { name: 'local-file-child', classification: 'local', mountedBy: 'suite' },
+    { name: '@deepseek-ai/official-child', classification: 'official', mountedBy: 'suite' },
   ])
 
   const multiple = { 'z-parent': '^1.0.0', 'a-parent': '^1.0.0', 'shared-child': '^1.0.0', 'z-only': '^1.0.0', 'a-only': '^1.0.0' }
@@ -100,11 +100,11 @@ test('discovers active multi-child aggregates and rejects ordinary, inactive, an
   assert.deepEqual(ownership('multiple', multiple), [
     { name: 'z-parent', classification: 'aggregate' },
     { name: 'a-parent', classification: 'aggregate' },
-    { name: 'shared-child', classification: 'aggregate-managed', managedBy: 'z-parent' },
-    { name: 'z-only', classification: 'aggregate-managed', managedBy: 'z-parent' },
-    { name: 'a-only', classification: 'aggregate-managed', managedBy: 'z-parent' },
+    { name: 'shared-child', classification: 'independent', mountedBy: 'z-parent' },
+    { name: 'z-only', classification: 'independent', mountedBy: 'z-parent' },
+    { name: 'a-only', classification: 'independent', mountedBy: 'z-parent' },
   ])
-  assert.deepEqual(visibleProfileDeps('multiple', multiple).map(([name]) => name), ['z-parent', 'a-parent'])
+  assert.deepEqual(visibleProfileDeps('multiple', multiple).map(([name]) => name), Object.keys(multiple))
 
   const ties = { 'z-parent': '^1.0.0', 'a-parent': '^1.0.0', shared: '^1.0.0', 'z-child': '^1.0.0', 'a-child': '^1.0.0' }
   writeJson(join(home, 'profiles', 'ties', 'package.json'), { dependencies: ties, dsh: { profile: { bundles: ['z-parent', 'a-parent'] } } })
@@ -112,7 +112,7 @@ test('discovers active multi-child aggregates and rejects ordinary, inactive, an
   install('ties', 'a-parent', { dependencies: { shared: '^1.0.0', 'a-child': '^1.0.0' }, dsh: { bundle: { patch: 'bundle.patch.yml' } } })
   writeFileSync(join(home, 'profiles', 'ties', 'node_modules', 'z-parent', 'bundle.patch.yml'), '- insert:\n    - name: shared\n    - name: z-child\n')
   writeFileSync(join(home, 'profiles', 'ties', 'node_modules', 'a-parent', 'bundle.patch.yml'), '- insert:\n    - name: shared\n    - name: a-child\n')
-  assert.equal(ownership('ties', ties).find((row) => row.name === 'shared').managedBy, 'a-parent')
+  assert.equal(ownership('ties', ties).find((row) => row.name === 'shared').mountedBy, 'a-parent')
 })
 
 test('insert parser stops at sibling mappings and ignores later metadata names', () => {

@@ -277,6 +277,55 @@ test('bulk updates disable row actions while preserving the row state', () => {
   assert.equal(rowActionsDisabled(false, true), true)
 })
 
+test('mounted plugins retain independent update action metadata and relationship hints', () => {
+  const { mountRelationshipInfo, rowActionsDisabled } = loadBundle().__test
+  const sidebar = {
+    name: 'dsh-better-sidebar',
+    canAutoUpdate: true,
+    profiles: [{ profile: 'web', mountedBy: '@example/web-suite' }],
+    mounts: [],
+  }
+  const suite = {
+    name: '@example/web-suite',
+    canAutoUpdate: true,
+    profiles: [{ profile: 'web' }],
+    relationships: [{ profile: 'web', parent: '@example/web-suite', child: 'dsh-better-sidebar' }],
+  }
+
+  assert.deepEqual(mountRelationshipInfo(sidebar), { mountedBy: ['@example/web-suite'], mounts: [] })
+  assert.deepEqual(mountRelationshipInfo(suite).mounts.map((relation) => relation.child), ['dsh-better-sidebar'])
+  assert.equal(sidebar.canAutoUpdate, true)
+  assert.equal(rowActionsDisabled(false, false), false)
+
+  const profileScoped = {
+    profiles: [{ profile: 'web', relationships: [{ child: 'dsh-better-sidebar' }] }],
+  }
+  assert.deepEqual(mountRelationshipInfo(profileScoped).mounts.map((relation) => relation.child), ['dsh-better-sidebar'])
+})
+
+test('mounted rows group deterministically without duplicating children', () => {
+  const { groupMountedRows, partitionPluginGroups } = loadBundle().__test
+  const parent = { name: 'bundle-a', updateAvailable: false, mounts: [{ child: 'child' }] }
+  const competingParent = { name: 'bundle-b', updateAvailable: true, mounts: [{ child: 'child' }] }
+  const child = { name: 'child', updateAvailable: true, mountedBy: 'bundle-a' }
+  const nodes = groupMountedRows([parent, competingParent, child])
+  assert.deepEqual(nodes.map((node) => node.row.name), ['bundle-a', 'bundle-b'])
+  assert.deepEqual(nodes[0].children.map((node) => node.row.name), ['child'])
+  assert.deepEqual(partitionPluginGroups([parent, competingParent, child]).behind.map((group) => group.parent.name), ['bundle-a', 'bundle-b'])
+})
+
+test('child and bundle update targets preserve independent names and profile scopes', () => {
+  const { rowUpdateTarget, bundleUpdateTargets } = loadBundle().__test
+  const parent = { name: 'bundle', canAutoUpdate: true, updatableProfiles: ['web'] }
+  const child = { row: { name: 'child', canAutoUpdate: true, updatableProfiles: ['desktop'] }, children: [] }
+  const blocked = { row: { name: 'blocked', canAutoUpdate: false, updatableProfiles: ['headless'] }, children: [] }
+  assert.deepEqual(rowUpdateTarget(child.row), { name: 'child', profiles: ['desktop'] })
+  assert.deepEqual(bundleUpdateTargets(parent, [child, blocked]), [
+    { name: 'bundle', profiles: ['web'] },
+    { name: 'child', profiles: ['desktop'] },
+  ])
+})
+
 test('modal focus trap wraps Tab at both boundaries', () => {
   const { trapModalFocus } = loadBundle().__test
   const first = { focus: () => { first.focused = true } }

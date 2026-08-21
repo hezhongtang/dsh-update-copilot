@@ -26,9 +26,9 @@ DSH 迭代很快，插件生态同样如此。每个 profile 通过 pnpm spec �
 | 🔭 **全量雷达** | 一次扫描覆盖 dsh 本体 + 官方 bundle（`dsh-base`、`dsh-web-app`）+ 所有 profile 的插件依赖 |
 | 🔄 **双通道** | npm registry 版本（完整 semver 比较，含 prerelease）+ git 上游（pinned commit vs HEAD，`link:` 目录走只读 `ls-remote`） |
 | 🧭 **更新要点** | 逐项给出：semver 跨度、风险分级（major → 高、minor → 中、patch → 低）、变更材料——npm 版本列表 / GitHub compare 提交 / Release 说明（正文内联渲染）/ 本地 `git log`；每条材料都可点击跳转（npm 版本页、提交、Release、compare 对比页），每个插件行带 ↗ 直达其仓库——monorepo 子包定位到子目录，解析不出 GitHub 仓库的 npm 插件兜底到其 npm 包页面 |
-| 🤖 **Agent 工具** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update`——对 Agent 说一句「有没有更新」，得到有数据支撑的回答；扫描按包合并（一个包一行），官方包与 aggregate-managed 子项只报告、不独立更新；不传 `profile` 的 update 也只作用于符合独立更新条件的安装 |
-| 🖥 **Web 界面** | 仅 Web host 的设置旁侧栏入口会在挂载时补齐徽章，并在启动扫描后重试；后台扫描在启动时执行一次，之后每 30 分钟执行一次。紧凑雷达弹窗落后项优先、已最新折叠；aggregate-managed 子项始终跟随父行，父行已最新时仍在已最新分组。完整页面仍在 设置 → 更新助手。插件跨 profile 合并成一行，带每个 profile 的当前 → 最新版本；aggregate-managed 子项可在父行下展开，只读展示。「更新」和「一键更新全部」只作用于明确列出的合格 profile；更新过程通过 SSE 实时推送进度（解析依赖 / 下载中 / 重试中 / 暂存 / 拉取 / 恢复阶段），直接渲染成每行进度条 |
-| 🛡 **更新护栏** | 同源 POST + 显式 `confirm`、严格目标 allowlist、单并发锁、5 分钟超时；npm/github 通道只走官方 `dsh plugin` CLI，`link:` 本地目录走 git pull（自动暂存 → 拉取 → 恢复），冲突一律交还手动处理；`file:`、官方 `@deepseek-ai/*` 包与 aggregate-managed 子项仍拒绝 |
+| 🤖 **Agent 工具** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update`——对 Agent 说一句「有没有更新」，得到有数据支撑的回答；扫描按包合并（一个包一行），自动推断的挂载关系只用于展示；官方包只报告，每个直接依赖仍按自身更新策略处理 |
+| 🖥 **Web 界面** | 仅 Web host 的设置旁侧栏入口会在挂载时补齐徽章，并在启动扫描后重试；后台扫描在启动时执行一次，之后每 30 分钟执行一次。紧凑雷达弹窗落后项优先、已最新折叠；自动推断的挂载关系始终跟随父行，父行已最新时仍在已最新分组。完整页面仍在 设置 → 更新助手。插件跨 profile 合并成一行，带每个 profile 的当前 → 最新版本；挂载的包可在父行下展开披露，同时保留独立归属和更新操作。子项「更新」只更新子项，父项普通「更新」只更新父项；「更新 bundle」先更新父项，再按序更新当前展示且可独立更新的挂载子项，并报告进度与结果。「一键更新全部」仍是独立的全局操作。更新过程通过 SSE 实时推送进度（解析依赖 / 下载中 / 重试中 / 暂存 / 拉取 / 恢复阶段），直接渲染成每行进度条 |
+| 🛡 **更新护栏** | 同源 POST + 显式 `confirm`、严格目标 allowlist、单并发锁、5 分钟超时；npm/github 通道只走官方 `dsh plugin` CLI，`link:` 本地目录走 git pull（自动暂存 → 拉取 → 恢复），冲突一律交还手动处理；`file:` 与官方 `@deepseek-ai/*` 包仍拒绝 |
 | 🌐 **完整双语** | 所有面向用户的文案——面板、弹窗、徽章、更新要点、建议、更新错误——跟随界面语言（中/英）；Agent 工具路径保留稳定英文标识 |
 
 ## 安装
@@ -53,7 +53,7 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成更新要点、�
 
 ### 或者用弹窗 / 面板
 
-**设置旁的侧栏按钮**打开紧凑雷达弹窗（ESC 或点击遮罩关闭；URL 带 `?duc=1` 会自动打开一次——截图和测试很好用）。**设置 → 更新助手** 是完整页面：核心状态（附可复制的升级命令——只展示、绝不执行）、全部已装插件跨 profile 合并成一行（每个 profile 的当前 → 最新版本内联展示）、可展开的 aggregate-managed 子项、内联更新要点，以及每行一个**一键「更新」**按钮。每个包都带明确的合格 profile，不会按同名依赖盲目更新全部 profile。工具栏还有**「一键更新全部」**，按序跑合格的落后包。更新过程由 SSE 实时推送到每行进度条。更新完成后，当前 profile 里 entry 与 bundle patch 未变的插件会**就地热重载**；只有热重载不适用的更新（bundle patch 变化、非当前 profile、自更新等）才显示重启横幅。
+**设置旁的侧栏按钮**打开紧凑雷达弹窗（ESC 或点击遮罩关闭；URL 带 `?duc=1` 会自动打开一次——截图和测试很好用）。**设置 → 更新助手** 是完整页面：核心状态（附可复制的升级命令——只展示、绝不执行）、全部已装插件跨 profile 合并成一行（每个 profile 的当前 → 最新版本内联展示）、可展开的挂载关系、内联更新要点，以及每行一个**一键「更新」**按钮。子项行的「更新」只作用于子项，父项普通「更新」只作用于父项；「更新 bundle」先运行父项，再按序更新当前展示且可独立更新的挂载子项，并报告进度与结果。每个包都带明确的合格 profile，不会按同名依赖盲目更新全部 profile。工具栏的**「一键更新全部」**仍是独立的全局操作，按序跑合格的落后包。更新过程由 SSE 实时推送到每行进度条。更新完成后，当前 profile 里 entry 与 bundle patch 未变的插件会**就地热重载**；只有热重载不适用的更新（bundle patch 变化、非当前 profile、自更新等）才显示重启横幅。
 
 ### Agent 工具一览
 
@@ -65,7 +65,7 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成更新要点、�
 
 ## 工作原理
 
-每个依赖 spec 先分类到通道，每个通道有自己的比较方式。扫描结果按包跨 profile 合并：同一个包装在 web / headless / desktop，就只出现一行，携带每个 profile 的通道与版本，以及明确的合格更新 profile。活动 profile bundle 的包内 patch 若挂载至少两个自身生产依赖，便会自动识别为聚合包。匹配的直接 profile 依赖在父行下以只读子项展示；多个父包声明同一子项时，先选已验证子项更多的父包，再按包名确定归属。`link:` 与 `file:` 本地依赖保持本地；官方 `@deepseek-ai/*` 包只报告，不能独立更新。
+每个依赖 spec 先分类到通道，每个通道有自己的比较方式。扫描结果按包跨 profile 合并：同一个包装在 web / headless / desktop，就只出现一行，携带每个 profile 的通道与版本，以及明确的合格更新 profile。活动 profile bundle 的包内 patch 若挂载至少两个生产依赖，会展示仅用于呈现的挂载关系；多个父包声明同一子项时，先选已验证子项更多的父包，再按包名确定归属。挂载关系不转移更新归属，每个直接依赖仍按自身策略更新。`link:` 与 `file:` 本地依赖保持本地；官方 `@deepseek-ai/*` 包只报告，不能独立更新。
 
 | 通道 | spec 示例 | 当前版本 | 最新版本 |
 |---|---|---|---|
@@ -75,7 +75,7 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成更新要点、�
 
 npm 通道刻意不信任 `latest` dist-tag：monorepo 子包的这个 tag 常年滞后，会把实际比 tag 更新的安装误报为落后。版本比较采用完整 semver 优先级（含 prerelease），因此 `0.1.0-rc.6 > 0.1.0-rc.5`、`1.0.0 > 1.0.0-rc.1` 都成立。
 
-更新通过两条路径执行，都经过严格校验、不拼接 shell：npm/github 通道走 `dsh plugin --profile <p> add <target>`——和人手动输入的是同一条路径——目标字符串经过 allowlist 校验；`link:` 本地目录保持本地，在 checkout 内直接跑 git（`git stash push` 暂存本地改动 → `git pull` → `git stash pop` 恢复），pull 失败/超时自动重试（默认共 3 次，1s/3s 退避），合并冲突或恢复冲突绝不自动解决——结果里返回 `attempts`、`stash` 状态与最后一次输出。一键更新 / 一键更新全部只按包行里明确列出的合格 profile 依次执行，绝不因同名依赖而更新全部 profile。
+更新通过两条路径执行，都经过严格校验、不拼接 shell：npm/github 通道走 `dsh plugin --profile <p> add <target>`——和人手动输入的是同一条路径——目标字符串经过 allowlist 校验；`link:` 本地目录保持本地，在 checkout 内直接跑 git（`git stash push` 暂存本地改动 → `git pull` → `git stash pop` 恢复），pull 失败/超时自动重试（默认共 3 次，1s/3s 退避），合并冲突或恢复冲突绝不自动解决——结果里返回 `attempts`、`stash` 状态与最后一次输出。子项、父项和 bundle 操作都只按包行里明确列出的合格 profile 执行；「一键更新全部」仍是独立的全局操作，绝不因同名依赖而更新全部 profile。
 
 `link:` 目录还可以**切换到远端源**：copilot 把依赖 spec 改写为 npm 上最新发布的版本（优先查 registry），包未发布到 npm 时改写为 `github:owner/repo#<origin HEAD>`。本地链接断开，此后更新走常规 npm/github 通道。切换是破坏性操作，永远需要显式确认，绝不并入默认 pull 路径。
 
