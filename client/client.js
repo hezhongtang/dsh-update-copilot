@@ -6,15 +6,17 @@ var module = { exports: {} }; var exports = module.exports;
  * dsh-update-copilot client.
  *
  * Three seats:
- *  - Settings section: the full update radar page (core + every profile's
- *    plugins, inline update highlights, two-step confirm updates, op log).
+ *  - Settings section: the full update radar page (core + every installed
+ *    plugin, merged across profiles — one row per package, one-click update
+ *    that runs the identical command in every profile that has the package,
+ *    plus an "update all" toolbar action; inline update highlights; op log).
  *  - sidebar.footer.action: a trigger beside the Settings button. Lazy badge:
  *    the behind-plugin count appears only after the popup has been opened at
  *    least once this session — no background polling, upstream APIs are only
  *    touched on user action.
  *  - shell.overlay: a modal popup with the compact radar — behind rows first,
- *    up-to-date rows folded away; same two-step confirm updates. Opened via
- *    the sidebar button or the `?duc=1` URL parameter (visual-test hook).
+ *    up-to-date rows folded away; same one-click updates. Opened via the
+ *    sidebar button or the `?duc=1` URL parameter (visual-test hook).
  *
  * Hand-authored CJS bundle (no build step); externals are `react` and the
  * host-provided `@deepseek-ai/dsh-client-ui-primitives` icon set.
@@ -36,7 +38,7 @@ const NS_LOGS_OPEN = 'dsh-update-copilot:logs-open'
 
 const zh = {
   nav: '更新助手',
-  subtitle: 'DSH 本体、bundle 与全部 profile 插件的版本雷达',
+  subtitle: 'DSH 本体、bundle 与全部插件的版本雷达（跨 profile 合并）',
   refresh: '刷新',
   rescanning: '扫描中…',
   lastScan: '上次扫描',
@@ -50,9 +52,9 @@ const zh = {
   coreBehind: '有新版本',
   copyCmd: '复制升级命令',
   copied: '已复制',
-  profilesTitle: 'Profile 插件',
-  profilesHint: 'Profile 是 DSH 的独立运行形态——web（浏览器界面）、headless（无界面/API 后台）、desktop（桌面端）等，也可自定义；每个 profile 维护自己独立的插件依赖与版本，更新互不影响。',
-  noPlugins: '该 profile 没有插件依赖',
+  pluginsTitle: '插件（跨 profile 合并）',
+  profilesHint: '同一插件可能装在多个 profile（web / headless / desktop…）；这里按包名合并展示，点「更新」会同步更新所有安装了它的 profile——更新指令对每个 profile 完全一样。',
+  noPlugins: '没有任何插件依赖',
   kindNpm: 'npm',
   kindGithub: 'GitHub',
   kindLinked: '本地链接',
@@ -68,6 +70,14 @@ const zh = {
   brief: '更新要点',
   hideBrief: '收起',
   update: '更新',
+  updateAll: '一键更新全部',
+  updatingAll: '正在更新 {i}/{n}：{name}',
+  updatedAll: '✓ 全部更新完成',
+  bulkFailed: '{n} 项更新失败',
+  itemUpdated: '{p}：已更新',
+  itemCurrent: '{p}：已是最新',
+  itemFailed: '{p}：失败',
+  itemSkipped: '{p}：跳过',
   confirmUpdate: '确认更新？',
   switchRemote: '切换至远端源更新',
   confirmSwitchRemote: '确认切换远端源？',
@@ -152,7 +162,7 @@ const zh = {
 
 const en = {
   nav: 'Update Copilot',
-  subtitle: 'Version radar for the DSH core, bundles, and every profile plugin',
+  subtitle: 'Version radar for the DSH core, bundles, and plugins (merged across profiles)',
   refresh: 'Refresh',
   rescanning: 'Scanning…',
   lastScan: 'Last scan',
@@ -166,9 +176,9 @@ const en = {
   coreBehind: 'New version',
   copyCmd: 'Copy upgrade command',
   copied: 'Copied',
-  profilesTitle: 'Profile plugins',
-  profilesHint: 'A profile is a standalone DSH runtime — web (browser UI), headless (no-UI/API backend), desktop, or a custom one. Each profile keeps its own plugin dependencies and versions, so updates are independent per profile.',
-  noPlugins: 'No plugin dependencies in this profile',
+  pluginsTitle: 'Plugins (merged across profiles)',
+  profilesHint: 'A package may be installed in several profiles (web / headless / desktop…). Rows are merged by package name; one click on Update synchronizes the package in every profile that has it — the update command is identical for all profiles.',
+  noPlugins: 'No plugin dependencies installed',
   kindNpm: 'npm',
   kindGithub: 'GitHub',
   kindLinked: 'linked',
@@ -184,6 +194,14 @@ const en = {
   brief: 'Update highlights',
   hideBrief: 'Hide',
   update: 'Update',
+  updateAll: 'Update all',
+  updatingAll: 'Updating {i}/{n}: {name}',
+  updatedAll: '✓ All updates finished',
+  bulkFailed: '{n} update(s) failed',
+  itemUpdated: '{p}: updated',
+  itemCurrent: '{p}: already current',
+  itemFailed: '{p}: failed',
+  itemSkipped: '{p}: skipped',
   confirmUpdate: 'Confirm update?',
   switchRemote: 'Switch to remote source',
   confirmSwitchRemote: 'Switch to remote source?',
@@ -492,14 +510,22 @@ async function consumeUpdateResponse(res, onEvent) {
 }
 
 /**
- * POST an update and resolve the response. Throws on transport errors and on
- * every answer shape `consumeUpdateResponse` classifies as a failure.
+ * POST an update and resolve the response. The package-centric default (no
+ * `profile`) updates the package in every profile that has it installed —
+ * the update command is identical for all profiles; a `profile` restricts the
+ * update to one profile. Throws on transport errors and on every answer shape
+ * `consumeUpdateResponse` classifies as a failure.
  */
-async function streamUpdate(profile, name, onEvent, source = undefined) {
+async function streamUpdate(name, onEvent, profile = undefined, source = undefined) {
   const res = await fetch('/dsh-update-copilot/update', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ profile, name, confirm: true, ...(source !== undefined ? { source } : {}) }),
+    body: JSON.stringify({
+      name,
+      confirm: true,
+      ...(profile !== undefined && profile !== '' ? { profile } : {}),
+      ...(source !== undefined ? { source } : {}),
+    }),
     cache: 'no-store',
   })
   return consumeUpdateResponse(res, onEvent)
@@ -678,11 +704,6 @@ function RadarIcon() {
     h('path', { d: 'M8 8 L12.2 3.8', stroke: 'currentColor', strokeWidth: '1.1', strokeLinecap: 'round' }))
 }
 
-function KindChip({ t, kind }) {
-  const map = { npm: 'kindNpm', github: 'kindGithub', linked: 'kindLinked', file: 'kindFile', git: 'kindGit', other: 'kindOther' }
-  return h('span', { className: 'duc-chip' }, t(map[kind] ?? 'kindOther'))
-}
-
 /**
  * Disclosure chevron: official 14px outline icon when the primitives bundle is
  * present, a plain text glyph otherwise. `open` faces down (expanded), closed
@@ -824,21 +845,11 @@ function localizedUpdateError(t, result) {
   return `${t('errFailed')}: ${result?.error ?? ''}`
 }
 
-function BriefPanel({ t, profile, name }) {
-  const [brief, setBrief] = useState(null)
-  const [error, setError] = useState(null)
-  useEffect(() => {
-    let cancelled = false
-    api(`/dsh-update-copilot/brief?profile=${encodeURIComponent(profile)}&name=${encodeURIComponent(name)}`)
-      .then((data) => { if (!cancelled) setBrief(data) })
-      .catch((e) => { if (!cancelled) setError(String(e.message ?? e)) })
-    return () => { cancelled = true }
-  }, [profile, name])
-
-  if (error !== null) return h('div', { className: 'duc-brief duc-error' }, `${t('loadFail')}: ${error}`)
-  if (brief === null) return h('div', { className: 'duc-brief' }, t('loading'))
-  if (brief.error !== undefined) return h('div', { className: 'duc-brief duc-error' }, brief.error)
-
+/**
+ * One single-profile brief body: risk chip, semver span, repo link,
+ * recommendation, note, and the changelog material list.
+ */
+function BriefBody({ t, brief }) {
   const m = brief.material ?? {}
   const listItems = []
   if (Array.isArray(m.versions) && m.versions.length > 0) {
@@ -896,13 +907,81 @@ function BriefPanel({ t, profile, name }) {
       : h('div', { className: 'duc-note' }, t('noMaterial')))
 }
 
+/**
+ * Update highlights for one package. The package-centric server answers an
+ * aggregated brief (`{ name, items: [...] }`) when no profile is given — one
+ * section per profile that has the package installed; the single-profile
+ * shape is still accepted for robustness.
+ */
+function BriefPanel({ t, name }) {
+  const [brief, setBrief] = useState(null)
+  const [error, setError] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    api(`/dsh-update-copilot/brief?name=${encodeURIComponent(name)}`)
+      .then((data) => { if (!cancelled) setBrief(data) })
+      .catch((e) => { if (!cancelled) setError(String(e.message ?? e)) })
+    return () => { cancelled = true }
+  }, [name])
+
+  if (error !== null) return h('div', { className: 'duc-brief duc-error' }, `${t('loadFail')}: ${error}`)
+  if (brief === null) return h('div', { className: 'duc-brief' }, t('loading'))
+  if (brief.error !== undefined) return h('div', { className: 'duc-brief duc-error' }, brief.error)
+
+  if (Array.isArray(brief.items) && brief.items.length > 0) {
+    return h('div', { className: 'duc-brief', style: { gap: '10px' } },
+      brief.items.map((b) => h('div', { key: b.profile, style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+        h('div', { className: 'duc-card-title' }, b.profile),
+        h(BriefBody, { t, brief: b }))))
+  }
+  return h(BriefBody, { t, brief })
+}
+
 // Visual-test hook: set once by the `&brief=1` URL parameter — behind rows
 // then start with their update highlights already expanded (screenshot-visible).
 let autoBrief = false
 
-function PluginRow({ t, profile, row, categories, onUpdated }) {
+const KIND_KEYS = { npm: 'kindNpm', github: 'kindGithub', linked: 'kindLinked', file: 'kindFile', git: 'kindGit', other: 'kindOther' }
+
+/**
+ * Result line for one update outcome. Per-package outcomes carry an `items`
+ * array (one entry per profile); render them as a compact list so a mixed
+ * success/failure is truthful. Single-profile outcomes (the link→remote
+ * switch) keep the original one-line rendering.
+ */
+function UpdateResult({ t, result }) {
+  if (result.items !== undefined && Array.isArray(result.items)) {
+    return h('div', { className: `duc-note ${result.ok ? '' : 'duc-error'}` },
+      result.changed
+        ? (result.hotReloaded === true ? t('hotReloaded') : t('updated'))
+        : (result.code === 'update_noop' ? t('updateNoChange') : t('updateFail')),
+      h('ul', { className: 'duc-list' },
+        result.items.map((item) => h('li', { key: item.profile },
+          item.ok === true
+            ? t('itemUpdated', { p: item.profile })
+            : item.current === true
+              ? t('itemCurrent', { p: item.profile })
+              : item.skipped !== undefined
+                ? `${t('itemSkipped', { p: item.profile })} — ${localizedUpdateError(t, item)}`
+                : `${t('itemFailed', { p: item.profile })} — ${localizedUpdateError(t, item)}`))))
+  }
+  return h('div', { className: `duc-note ${result.ok ? '' : 'duc-error'}` },
+    result.ok
+      ? (result.switched !== undefined ? t('switchedRemote')
+        : result.changed ? (result.hotReloaded === true ? t('hotReloaded') : t('updated'))
+          : t('updateNoChange'))
+      : localizedUpdateError(t, result))
+}
+
+/**
+ * One package row, merged across profiles: the version cell lists every
+ * installed profile with its current → latest; a single click on 更新 runs
+ * the update in all of them (the update command is identical for every
+ * profile). The only remaining two-step action is the destructive
+ * link→remote source switch.
+ */
+function PluginRow({ t, row, categories, onUpdated }) {
   const [open, setOpen] = useState(autoBrief && row.updateAvailable === true)
-  const [confirming, setConfirming] = useState(false)
   const [switchConfirming, setSwitchConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
@@ -910,16 +989,18 @@ function PluginRow({ t, profile, row, categories, onUpdated }) {
   // bar (pnpm output carries no percentage yet); phase is the latest stage.
   const [progress, setProgress] = useState(null)
 
-  const canUpdate = row.updateAvailable && (row.kind === 'npm' || row.kind === 'github' || row.kind === 'linked')
-  const canSwitch = row.kind === 'linked'
-  const note = row.official ? t('officialNote') : row.kind === 'file' ? t('linkedNote') : null
+  const canUpdate = row.canAutoUpdate === true
+  const switchProfile = row.profiles.length === 1 && row.profiles[0].canSwitch === true
+    ? row.profiles[0].profile
+    : null
+  const note = row.official ? t('officialNote') : null
 
   async function runUpdate() {
     setBusy(true)
     setResult(null)
     setProgress({ percent: null, phase: 'start' })
     try {
-      const outcome = await streamUpdate(profile, row.name, (event) => {
+      const outcome = await streamUpdate(row.name, (event) => {
         if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
         else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
@@ -930,7 +1011,6 @@ function PluginRow({ t, profile, row, categories, onUpdated }) {
       setResult({ ok: false, error: String(e.message ?? e) })
     } finally {
       setBusy(false)
-      setConfirming(false)
       setSwitchConfirming(false)
       setProgress(null)
     }
@@ -941,18 +1021,17 @@ function PluginRow({ t, profile, row, categories, onUpdated }) {
     setResult(null)
     setProgress({ percent: null, phase: 'start' })
     try {
-      const outcome = await streamUpdate(profile, row.name, (event) => {
+      const outcome = await streamUpdate(row.name, (event) => {
         if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
         else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
-      }, 'remote')
+      }, switchProfile, 'remote')
       setResult(outcome)
       if (outcome.ok && outcome.changed) onUpdated(outcome)
     } catch (e) {
       setResult({ ok: false, error: String(e.message ?? e) })
     } finally {
       setBusy(false)
-      setConfirming(false)
       setSwitchConfirming(false)
       setProgress(null)
     }
@@ -961,14 +1040,16 @@ function PluginRow({ t, profile, row, categories, onUpdated }) {
   return h('div', null,
     h('div', { className: 'duc-row' },
       h('span', { className: 'duc-name' }, row.name),
-      h(RepoLink, { t, repo: row.repo, repoUrl: row.repoUrl, npmName: row.kind === 'npm' ? row.name : undefined }),
-      h(KindChip, { t, kind: row.kind }),
+      h(RepoLink, { t, repo: row.repo, repoUrl: row.repoUrl, npmName: row.profiles.some((p) => p.kind === 'npm') ? row.name : undefined }),
       h(CategoryChip, { category: row.category, categories }),
       h('span', { className: 'duc-ver' },
-        h('span', { title: t('current') }, shortVer(row.current)),
-        row.updateAvailable ? h(React.Fragment, null,
-          h('span', { className: 'duc-arrow' }, ' → '),
-          h('span', { title: t('latest') }, shortVer(row.latest))) : null),
+        row.profiles.map((p) => h('span', {
+          key: p.profile,
+          className: 'duc-chip',
+          title: `${p.profile} · ${t(KIND_KEYS[p.kind] ?? 'kindOther')} · ${t('current')}: ${p.current} → ${t('latest')}: ${p.latest ?? '—'}`,
+        }, p.updateAvailable
+          ? `${p.profile}: ${shortVer(p.current)} → ${shortVer(p.latest)}`
+          : `${p.profile}: ${shortVer(p.current)}`))),
       h('span', { className: `duc-badge ${row.updateAvailable ? 'behind' : 'ok'}` },
         row.updateAvailable ? t('behind') : t('upToDate')),
       note !== null ? h('span', { className: 'duc-note' }, note) : null,
@@ -977,12 +1058,8 @@ function PluginRow({ t, profile, row, categories, onUpdated }) {
           open ? t('hideBrief') : t('brief')) : null,
         canUpdate ? (busy
           ? h('button', { className: 'duc-btn', disabled: true }, t('updating'))
-          : h('button', {
-              className: `duc-btn ${confirming ? 'danger' : 'primary'}`,
-              onClick: () => (confirming ? runUpdate() : setConfirming(true)),
-              onBlur: () => setConfirming(false),
-            }, confirming ? t('confirmUpdate') : t('update'))) : null,
-        canSwitch ? (busy
+          : h('button', { className: 'duc-btn primary', onClick: runUpdate }, t('update'))) : null,
+        switchProfile !== null ? (busy
           ? null
           : h('button', {
               className: `duc-btn ${switchConfirming ? 'danger' : ''}`,
@@ -999,14 +1076,8 @@ function PluginRow({ t, profile, row, categories, onUpdated }) {
         })),
       h('span', { className: 'duc-progress-label' },
         progress.percent !== null ? `${progress.percent}%` : t('progressPhase', { phase: t(`progress_${progress.phase}`) }))) : null,
-    result !== null ? h('div', {
-      className: `duc-note ${result.ok ? '' : 'duc-error'}`,
-    }, result.ok
-      ? (result.switched !== undefined ? t('switchedRemote')
-        : result.changed ? (result.hotReloaded === true ? t('hotReloaded') : t('updated'))
-          : t('updateNoChange'))
-      : localizedUpdateError(t, result)) : null,
-    open ? h(BriefPanel, { t, profile, name: row.name }) : null)
+    result !== null ? h(UpdateResult, { t, result }) : null,
+    open ? h(BriefPanel, { t, name: row.name }) : null)
 }
 
 function CoreCard({ t, core }) {
@@ -1056,25 +1127,72 @@ function CoreCard({ t, core }) {
     !collapsed && coreRow !== undefined && !coreRow.updateAvailable ? h('div', { className: 'duc-note' }, t('corePolicy')) : null)
 }
 
-function ProfileCard({ t, data, categories, onUpdated, compact = false }) {
+/**
+ * The single plugins card: every package merged across profiles, one row per
+ * package. `plugins` is the aggregated list from the scan; `compact` folds the
+ * up-to-date rows away (popup mode).
+ */
+function PluginListCard({ t, plugins, categories, onUpdated, compact = false }) {
   const [showOk, setShowOk] = useState(false)
-  const behindRows = data.plugins.filter((r) => r.updateAvailable)
-  const okRows = data.plugins.filter((r) => !r.updateAvailable)
-  const rows = compact ? [...behindRows, ...(showOk ? okRows : [])] : data.plugins
+  const behindRows = plugins.filter((r) => r.updateAvailable)
+  const okRows = plugins.filter((r) => !r.updateAvailable)
+  const rows = compact ? [...behindRows, ...(showOk ? okRows : [])] : plugins
 
-  return h('div', { className: 'duc-card', key: data.profile },
+  return h('div', { className: 'duc-card' },
     h('div', { className: 'duc-card-title' },
-      `${t('profilesTitle')} — ${data.profile} `,
-      h('span', { className: 'duc-note' }, t('scanSummary', { p: data.plugins.length, b: data.behind }))),
-    data.plugins.length === 0
+      t('pluginsTitle'), ' ',
+      h('span', { className: 'duc-note' }, t('scanSummary', { p: plugins.length, b: behindRows.length }))),
+    plugins.length === 0
       ? h('div', { className: 'duc-note' }, t('noPlugins'))
-      : rows.map((row) => h(PluginRow, { t, profile: data.profile, row, categories, key: row.name, onUpdated })),
+      : rows.map((row) => h(PluginRow, { t, row, categories, key: row.name, onUpdated })),
     compact && okRows.length > 0
       ? h('button', { type: 'button', className: 'duc-fold', onClick: () => setShowOk(!showOk), 'aria-expanded': showOk },
           h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
             h(Chevron, { open: showOk })),
           t('upToDateFold', { n: okRows.length }))
       : null)
+}
+
+/**
+ * The "update everything outdated" runner: loops the aggregated canAutoUpdate
+ * packages sequentially through the same single-flight update route (the
+ * server serializes anyway) and reports progress via `bulk` state.
+ */
+function useBulkUpdate() {
+  const [bulk, setBulk] = useState({ running: false, index: 0, total: 0, name: null })
+  const [bulkResult, setBulkResult] = useState(null)
+  const runAll = useCallback(async (plugins) => {
+    const targets = plugins.filter((p) => p.canAutoUpdate === true)
+    if (targets.length === 0) return
+    setBulkResult(null)
+    setBulk({ running: true, index: 0, total: targets.length, name: null })
+    const results = []
+    for (let i = 0; i < targets.length; i += 1) {
+      setBulk({ running: true, index: i + 1, total: targets.length, name: targets[i].name })
+      try {
+        results.push({ name: targets[i].name, outcome: await streamUpdate(targets[i].name, () => {}) })
+      } catch (e) {
+        results.push({ name: targets[i].name, outcome: { ok: false, error: String(e.message ?? e) } })
+      }
+    }
+    const failed = results.filter((r) => r.outcome.ok !== true).length
+    const changed = results.some((r) => r.outcome.changed === true)
+    setBulk({ running: false, index: 0, total: 0, name: null })
+    setBulkResult({ failed, changed, requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+    return results
+  }, [])
+  return { bulk, bulkResult, runAll }
+}
+
+/** Toolbar actions shared by the settings page and the popup. */
+function UpdateAllButton({ t, plugins, bulk, runAll }) {
+  const hasTargets = plugins.some((p) => p.canAutoUpdate === true)
+  if (bulk.running) {
+    return h('span', { className: 'duc-meta' }, t('updatingAll', { i: bulk.index, n: bulk.total, name: bulk.name }))
+  }
+  return hasTargets
+    ? h('button', { className: 'duc-btn primary', onClick: () => runAll(plugins) }, t('updateAll'))
+    : null
 }
 
 function LogTail({ t, opsVersion }) {
@@ -1127,8 +1245,16 @@ function BadgePrefRow({ t }) {
 
 function CopilotSection({ t }) {
   const { status, error, busy, load, needRestart, opsVersion, notifyUpdated } = useCopilotData(true)
+  const { bulk, bulkResult, runAll } = useBulkUpdate()
 
   useEffect(() => { injectStyles() }, [])
+
+  async function onRunAll(plugins) {
+    const results = await runAll(plugins)
+    if (results === undefined) return
+    const changed = results.some((r) => r.outcome.changed === true)
+    if (changed) notifyUpdated({ requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+  }
 
   return h('div', { className: 'duc' },
     h('div', { className: 'duc-head' },
@@ -1137,20 +1263,21 @@ function CopilotSection({ t }) {
       status !== null ? h('span', { className: 'duc-meta' },
         `${t('lastScan')}: ${fmtClock(status.generatedAt)}`,
         h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
-          busy ? t('rescanning') : t('refresh'))) : null),
+          busy ? t('rescanning') : t('refresh'))) : null,
+      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll }) : null),
+    bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
+      `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
     error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error} `,
       h('button', { className: 'duc-btn', onClick: () => load(false) }, t('retry'))) : null,
     needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
     status === null && error === null ? h('div', { className: 'duc-note' }, t('loading')) : null,
     h('div', { className: 'duc-card', style: { padding: '10px 12px' } }, h(BadgePrefRow, { t })),
     status !== null ? h(CoreCard, { t, core: status.core }) : null,
-    status !== null && status.profiles.length > 0
+    status !== null && status.plugins.length > 0
       ? h('div', { className: 'duc-profiles-hint' }, t('profilesHint'))
       : null,
     status !== null
-      ? status.profiles.map((p) => h(ProfileCard, {
-          t, data: p, categories: status.categories, key: p.profile, onUpdated: notifyUpdated,
-        }))
+      ? h(PluginListCard, { t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated })
       : null,
     h(LogTail, { t, opsVersion }))
 }
@@ -1185,6 +1312,14 @@ function FooterButton({ t, wide }) {
 
 function PopupBody({ t }) {
   const { status, error, busy, load, needRestart, notifyUpdated } = useCopilotData(true)
+  const { bulk, bulkResult, runAll } = useBulkUpdate()
+
+  async function onRunAll(plugins) {
+    const results = await runAll(plugins)
+    if (results === undefined) return
+    const changed = results.some((r) => r.outcome.changed === true)
+    if (changed) notifyUpdated({ requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+  }
 
   return h('div', { className: 'duc' },
     h('div', { className: 'duc-toolbar' },
@@ -1193,15 +1328,18 @@ function PopupBody({ t }) {
             `${t('lastScan')}: ${fmtClock(status.generatedAt)}`,
             h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
               busy ? t('rescanning') : t('refresh')))
-        : null),
+        : null,
+      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll }) : null),
+    bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
+      `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
     needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
     error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error}`) : null,
     status === null && error === null ? h('div', { className: 'duc-note' }, t('loading')) : null,
     status !== null ? h(CoreCard, { t, core: status.core }) : null,
     status !== null
-      ? status.profiles.map((p) => h(ProfileCard, {
-          t, data: p, categories: status.categories, key: p.profile, compact: true, onUpdated: notifyUpdated,
-        }))
+      ? h(PluginListCard, {
+          t, plugins: status.plugins, categories: status.categories, compact: true, onUpdated: notifyUpdated,
+        })
       : null)
 }
 

@@ -5,7 +5,7 @@
 [![Zero build](https://img.shields.io/badge/zero--build-no%20bundler-2EA44F?style=flat-square)](lib)
 [![GitHub stars](https://img.shields.io/github/stars/hezhongtang/dsh-update-copilot?style=flat-square&logo=github)](https://github.com/hezhongtang/dsh-update-copilot/stargazers)
 
-**An update copilot for [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh): tracks the dsh core, shipped bundles, and every installed profile plugin — then helps you decide, and only then updates.**
+**An update copilot for [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh): tracks the dsh core, shipped bundles, and every installed plugin — merged package-centric across all profiles, with one-click updates. The update command is identical for every profile, so the radar never makes you pick one.**
 
 <p align="center">
   <img src="assets/popup.png" width="480" alt="The Update Copilot popup: core packages, per-plugin rows behind-first, up-to-date rows folded away." />
@@ -17,7 +17,7 @@ English | [中文](README.zh.md)
 
 DSH moves fast, and so does its plugin ecosystem. Every profile installs plugins through pnpm specs — npm versions, GitHub commit pins, local `link:` checkouts — and each channel drifts out of date in its own way. Checking them by hand means walking every repo; auto-updating everything blindly means trusting third-party code with your environment.
 
-This plugin takes the middle path: **detect everything, summarize what changed, update only what you confirmed.** The DSH core is deliberately *report-only* — upgrading the harness restarts every session, so that decision stays with a human.
+This plugin takes the middle path: **detect everything, summarize what changed, update only what you trigger.** Updates are one click — no confirmation ceremony between you and the button — and the click explicitly names what it runs (and in which profiles, which is all of them by default). The DSH core is deliberately *report-only* — upgrading the harness restarts every session, so that decision stays with a human.
 
 ## Features
 
@@ -26,8 +26,8 @@ This plugin takes the middle path: **detect everything, summarize what changed, 
 | 🔭 **Full radar** | dsh core + shipped bundles (`dsh-base`, `dsh-web-app`) + every profile's plugin dependencies, in one scan |
 | 🔄 **Dual channel** | npm registry versions (full semver compare, prerelease-aware) and git upstreams (pinned-commit vs HEAD, `link:` checkouts via read-only `ls-remote`) |
 | 🧭 **Update highlights** | Per-item: semver distance, risk level (major → high, minor → medium, patch → low), changelog material — npm versions between yours and latest, GitHub compare commits, release notes (with their body rendered inline), or local `git log`; every artifact links out (npm version pages, commits, releases, compare views) and every row carries a ↗ to its repository — monorepo sub-packages link to their subdirectory, npm plugins without a resolvable GitHub repository fall back to their npm package page |
-| 🤖 **Agent tools** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update` — ask your agent *"any updates?"* and get an honest, data-backed answer |
-| 🖥 **Web surfaces** | A sidebar trigger beside Settings (with a lazy badge: the behind-plugin count appears only after the first popup open — no background polling; the badge can be turned off in settings for a quiet sidebar) opens a compact popup — behind rows first, up-to-date rows folded; the full page lives on in Settings → Update Copilot with inline update highlights and two-step confirm updates; updates stream live progress over SSE (resolving / downloading / retrying / stash / pull / restore phases) straight into a per-row progress bar |
+| 🤖 **Agent tools** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update` — ask your agent *"any updates?"* and get an honest, data-backed answer. Scans are package-centric (one row per package, merged across profiles) and `profile` is optional on brief/update: without it, a brief covers every profile that has the package, and an update runs the identical command in all of them |
+| 🖥 **Web surfaces** | A sidebar trigger beside Settings (with a lazy badge: the behind-plugin count appears only after the first popup open — no background polling; the badge can be turned off in settings for a quiet sidebar) opens a compact popup — behind rows first, up-to-date rows folded; the full page lives on in Settings → Update Copilot. Plugins are merged across profiles into one row per package, each installed profile's current → latest listed inline; one click on **Update** updates the package in every profile that has it, and a toolbar **Update all** does the same for every outdated package in sequence. Updates stream live progress over SSE (resolving / downloading / retrying / stash / pull / restore phases) straight into a per-row progress bar |
 | 🛡 **Update guardrails** | Same-origin POST + explicit `confirm`, strict target allowlist, single-flight lock, 5-minute timeout; npm/github specs run only through the official `dsh plugin` CLI, `link:` checkouts update via git pull in their own directory (auto-stash → pull → restore; conflicts are always handed back for manual handling), `file:` and official `@deepseek-ai/*` installs are refused |
 | 🌐 **Fully bilingual** | Every user-facing string — panel, popup, badges, update highlights, recommendations, update errors — follows the UI language (zh/en); the agent tool path keeps stable English identifiers |
 
@@ -53,19 +53,19 @@ The agent runs `update_copilot_scan`, then builds a brief for each outdated item
 
 ### Or use the popup / panel
 
-The **sidebar button beside Settings** opens the compact radar popup (ESC or backdrop click closes; `?duc=1` in the URL opens it once — handy for screenshots and tests). **Settings → Update Copilot** is the full page: core status (with a copyable upgrade command — never executed), every profile's plugins with current → latest versions, inline update highlights, and a two-step confirm button per update. After an update, a plugin in the running profile is **hot-reloaded in place** when its entry and bundle patch are unchanged; the restart banner is only shown for updates outside the phase-1 hot-reload scope (bundle-patch changes, non-current profiles, self-update, etc.).
+The **sidebar button beside Settings** opens the compact radar popup (ESC or backdrop click closes; `?duc=1` in the URL opens it once — handy for screenshots and tests). **Settings → Update Copilot** is the full page: core status (with a copyable upgrade command — never executed), every installed plugin merged across profiles into one row per package (each profile's current → latest listed inline), inline update highlights, and a **one-click Update** button per row that updates the package in every profile that has it — the update command is identical for all profiles, so the radar never asks which one. A toolbar **Update all** button runs every outdated package in sequence. Live SSE progress drives a per-row progress bar. After an update, a plugin in the running profile is **hot-reloaded in place** when its entry and bundle patch are unchanged; the restart banner is only shown for updates outside the phase-1 hot-reload scope (bundle-patch changes, non-current profiles, self-update, etc.).
 
 ### Agent tool reference
 
 | Tool | Read/Write | Purpose |
 |---|---|---|
-| `update_copilot_scan` | read | Full scan across core + all profiles (10-min cache, `force` to bypass) |
-| `update_copilot_brief` | read | Semver distance, risk, changelog material, recommendation for one item |
-| `update_copilot_update` | write | Execute one **confirmed** update: npm/github specs through the official `dsh plugin` CLI (failed/timeout attempts retry automatically — 3 total, 1s/3s backoff); `link:` checkouts via git pull inside their own directory (auto-stash → pull → restore, conflicts handed back for manual handling), or with `source: "remote"` switch the dependency to the published npm version (or a `github:` spec when the package is not on npm) — breaking the local link |
+| `update_copilot_scan` | read | Full scan across core + all profiles, merged package-centric (10-min cache, `force` to bypass) |
+| `update_copilot_brief` | read | Semver distance, risk, changelog material, recommendation for one package; optional `profile` restricts the brief to one profile, otherwise every profile that has the package contributes |
+| `update_copilot_update` | write | Execute one **confirmed** update — without a `profile`, in every profile that has the package (the command is identical for all of them); npm/github specs through the official `dsh plugin` CLI (failed/timeout attempts retry automatically — 3 total, 1s/3s backoff); `link:` checkouts via git pull inside their own directory (auto-stash → pull → restore, conflicts handed back for manual handling), or with `source: "remote"` switch the dependency to the published npm version (or a `github:` spec when the package is not on npm) — breaking the local link |
 
 ## How it works
 
-Each dependency spec is classified into a channel, and each channel has its own comparison:
+Every dependency spec is classified into a channel, and each channel has its own comparison. Scans merge the profiles' plugin lists package-centric: the same package installed in `web`, `headless`, and `desktop` appears once, carrying each profile's channel and versions. Because the update command — `dsh plugin --profile <p> add <target>` — is identical for every profile, an update never needs to pick one: the copilot runs it in every profile that has the package.
 
 | Channel | Example spec | Current | Latest |
 |---|---|---|---|
@@ -75,7 +75,7 @@ Each dependency spec is classified into a channel, and each channel has its own 
 
 The npm channel deliberately ignores the `latest` dist-tag: monorepo sub-packages often leave that tag stale, which false-flags installs that are actually *newer* than the tag. Versions are compared with full semver precedence (prereleases included), so `0.1.0-rc.6 > 0.1.0-rc.5` and `1.0.0 > 1.0.0-rc.1` both hold.
 
-Updates execute through two vetted paths, never a raw shell string: npm/github specs run `dsh plugin --profile <p> add <target>` — the same path a human would type — with the target string validated against an allowlist; `link:` checkouts run git directly in their directory (`git stash push` for local changes → `git pull` → `git stash pop` to restore them). Failed or timed-out pulls are retried automatically: 3 total attempts by default, with 1s/3s backoff; merge conflicts or failed restores are never auto-resolved — the result reports `attempts`, a `stash` summary, and the last output.
+Updates execute through two vetted paths, never a raw shell string: npm/github specs run `dsh plugin --profile <p> add <target>` — the same path a human would type — with the target string validated against an allowlist; `link:` checkouts run git directly in their directory (`git stash push` for local changes → `git pull` → `git stash pop` to restore them). Failed or timed-out pulls are retried automatically: 3 total attempts by default, with 1s/3s backoff; merge conflicts or failed restores are never auto-resolved — the result reports `attempts`, a `stash` summary, and the last output. The one-click Update / Update all actions just run that command in every profile that has the package, in sequence.
 
 A `link:` checkout can also be **switched to a remote source**: the copilot replaces the dependency spec with the newest published npm version (npm registry first), or with `github:owner/repo#<origin HEAD>` when the package has no npm release. The local link breaks and future updates follow the normal npm/github channel. Switching is destructive, so it always requires explicit confirmation and is never part of the default pull path.
 
