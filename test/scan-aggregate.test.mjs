@@ -92,3 +92,26 @@ test('official flag is sticky across profiles', () => {
   ])
   assert.equal(plugins[0].official, true)
 })
+
+// Tool results are validated as lossless JSON by the harness; an explicit
+// `undefined` anywhere in the payload fails that check and kills the tool
+// call. Aggregation must never leave such values behind (regression).
+function assertNoUndefined(value, path = '$') {
+  assert.notEqual(value, undefined, `lossless-JSON violation at ${path}`)
+  if (value !== null && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) assertNoUndefined(v, `${path}.${k}`)
+  }
+}
+
+test('aggregated rows stay lossless-JSON safe (no explicit undefined)', () => {
+  const plugins = aggregateRows([
+    { profile: 'web', plugins: [row({ name: 'no-labels' }), row({ name: 'labeled', category: 'ui', repo: 'owner/repo' })] },
+    { profile: 'headless', plugins: [row({ name: 'no-labels', kind: 'github' })] },
+  ])
+  const noLabels = plugins.find((p) => p.name === 'no-labels')
+  assert.equal('category' in noLabels, false) // absent, never an undefined value
+  assertNoUndefined(noLabels)
+  const labeled = plugins.find((p) => p.name === 'labeled')
+  assert.equal(labeled.category, 'ui') // labels still merge when present
+  assertNoUndefined(labeled)
+})
