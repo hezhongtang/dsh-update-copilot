@@ -67,6 +67,8 @@ The **sidebar button beside Settings** opens the compact radar popup (ESC or bac
 
 Every dependency spec is classified into a channel, and each channel has its own comparison. Scans merge the profiles' plugin lists package-centric: the same package installed in `web`, `headless`, and `desktop` appears once, carrying each profile's channel and versions. Because the update command — `dsh plugin --profile <p> add <target>` — is identical for every profile, an update never needs to pick one: the copilot runs it in every profile that has the package.
 
+**What counts as a plugin row:** the packages a profile's manifest declares under `dsh.profile.bundles` (the list the host actually loads), plus every `link:` / `file:` checkout, which stays visible even before it is activated. Other plain dependencies in the manifest — a CLI or server runtime someone added for convenience — are not dsh plugins and don't render as one; that used to put a ghost update button beside the real plugin sharing the same GitHub repo. A manifest without a bundle list falls back to showing every dependency.
+
 | Channel | Example spec | Current | Latest |
 |---|---|---|---|
 | npm | `^0.1.4` | installed `package.json` version | newest version in the full registry doc |

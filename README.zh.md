@@ -67,6 +67,8 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成更新要点、�
 
 每个依赖 spec 先分类到通道，每个通道有自己的比较方式。扫描结果按包跨 profile 合并：同一个包装在 web / headless / desktop，就只出现一行，携带每个 profile 的通道与版本。因为更新指令——`dsh plugin --profile <p> add <target>`——对每个 profile 完全一样，更新时根本不需要选 profile：copilot 会在装有该包的每个 profile 里执行一遍。
 
+**什么才算一行插件：** profile manifest 里 `dsh.profile.bundles` 声明的包（宿主真正加载的那份清单），外加所有 `link:` / `file:` 本地开发检出——尚未激活也保持可见。manifest 里的其它普通依赖（顺手装进来的 CLI、服务端运行时等）不是 dsh 插件，也不会渲染成插件行；否则同一个 GitHub 仓库的真插件旁边会多出一个幽灵更新按钮。manifest 没有 bundle 清单时回退为展示全部依赖。
+
 | 通道 | spec 示例 | 当前版本 | 最新版本 |
 |---|---|---|---|
 | npm | `^0.1.4` | 已装 `package.json` 的版本 | registry 全量文档中的最新版 |
