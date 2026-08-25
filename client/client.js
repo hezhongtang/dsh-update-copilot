@@ -113,6 +113,8 @@ const zh = {
   badgeTitle: '{n} 个插件可更新',
   hideBadge: '隐藏更新红点',
   hideBadgeDesc: '关闭侧栏按钮上的「可更新数量」徽章；弹窗与本页仍会显示完整信息',
+  autoUpdate: '点击按钮时自动更新',
+  autoUpdateDesc: '开启后，点击侧栏「更新助手」按钮时若发现有落后的插件，立即自动开始「一键更新全部」；dsh 本体仍只报告、不执行',
   progressPhase: '{phase}…',
   progress_start: '开始更新',
   progress_waiting: '等待服务端完成…（旧版服务端，无实时进度）',
@@ -237,6 +239,8 @@ const en = {
   badgeTitle: '{n} plugin update(s) available',
   hideBadge: 'Hide update badge',
   hideBadgeDesc: 'Turn off the update-count badge on the sidebar button; the popup and this page keep full details',
+  autoUpdate: 'Auto-update on button click',
+  autoUpdateDesc: 'When on, clicking the sidebar Update Copilot button immediately starts "Update all" if outdated plugins are found; the dsh core stays report-only',
   progressPhase: '{phase}…',
   progress_start: 'Starting update',
   progress_waiting: 'Waiting for the server… (older server, no live progress)',
@@ -641,7 +645,28 @@ function writeBadgePref(hidden) {
   } catch { /* storage unavailable — in-memory only */ }
 }
 
-let uiState = { open: false, everOpened: false, summary: null, generatedAt: null, hideBadge: readBadgePref() }
+/**
+ * Auto-update preference, same per-browser storage as the badge toggle. Off by
+ * default: updates still start only after an explicit click, the option just
+ * makes that one click on the sidebar trigger also mean "run Update all".
+ */
+const AUTO_PREF_KEY = 'duc.autoUpdate'
+
+function readAutoUpdatePref() {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(AUTO_PREF_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeAutoUpdatePref(on) {
+  try {
+    localStorage.setItem(AUTO_PREF_KEY, on ? '1' : '0')
+  } catch { /* storage unavailable — in-memory only */ }
+}
+
+let uiState = { open: false, everOpened: false, summary: null, generatedAt: null, hideBadge: readBadgePref(), autoUpdate: readAutoUpdatePref(), autoRunAll: false }
 const uiSubs = new Set()
 
 function setUi(patch) {
@@ -653,6 +678,23 @@ function setUi(patch) {
 function setHideBadge(hidden) {
   writeBadgePref(hidden)
   setUi({ hideBadge: hidden })
+}
+
+/** Toggle the click-to-auto-update option; persists like the badge toggle. */
+function setAutoUpdate(on) {
+  writeAutoUpdatePref(on)
+  setUi({ autoUpdate: on === true })
+}
+
+/**
+ * Packages the auto-run should update: behind somewhere AND auto-updatable on
+ * at least one channel. Mirrors runAll's `canAutoUpdate` filter with an extra
+ * explicit updateAvailable guard; exported through __test for regression tests.
+ */
+function autoTargetsOf(plugins) {
+  if (!Array.isArray(plugins)) return []
+  return plugins.filter((p) => p !== null && typeof p === 'object'
+    && p.updateAvailable === true && p.canAutoUpdate === true)
 }
 
 function subscribeUi(notify) {
@@ -1243,6 +1285,20 @@ function BadgePrefRow({ t }) {
       h('span', { className: 'duc-note' }, t('hideBadgeDesc'))))
 }
 
+/** The click-to-auto-update preference row for the settings page. */
+function AutoUpdatePrefRow({ t }) {
+  const ui = useUi()
+  return h('label', { className: 'duc-pref' },
+    h('input', {
+      type: 'checkbox',
+      checked: ui.autoUpdate === true,
+      onChange: (e) => setAutoUpdate(e.target.checked),
+    }),
+    h('span', { className: 'duc-pref-body' },
+      h('span', { style: { fontWeight: 500 } }, t('autoUpdate')),
+      h('span', { className: 'duc-note' }, t('autoUpdateDesc'))))
+}
+
 function CopilotSection({ t }) {
   const { status, error, busy, load, needRestart, opsVersion, notifyUpdated } = useCopilotData(true)
   const { bulk, bulkResult, runAll } = useBulkUpdate()
@@ -1271,7 +1327,9 @@ function CopilotSection({ t }) {
       h('button', { className: 'duc-btn', onClick: () => load(false) }, t('retry'))) : null,
     needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
     status === null && error === null ? h('div', { className: 'duc-note' }, t('loading')) : null,
-    h('div', { className: 'duc-card', style: { padding: '10px 12px' } }, h(BadgePrefRow, { t })),
+    h('div', { className: 'duc-card', style: { padding: '10px 12px' } },
+      h(BadgePrefRow, { t }),
+      h(AutoUpdatePrefRow, { t })),
     status !== null ? h(CoreCard, { t, core: status.core }) : null,
     status !== null && status.plugins.length > 0
       ? h('div', { className: 'duc-profiles-hint' }, t('profilesHint'))
@@ -1297,7 +1355,13 @@ function FooterButton({ t, wide }) {
     title: showBadge ? t('badgeTitle', { n: behind }) : t('nav'),
     'aria-label': t('nav'),
     'aria-haspopup': 'dialog',
-    onClick: () => setUi({ open: true, everOpened: true }),
+    onClick: () => setUi({
+      open: true,
+      everOpened: true,
+      // Auto-update option: this one click also means "update all" — the
+      // popup consumes the flag once its first scan arrives.
+      ...(ui.autoUpdate === true ? { autoRunAll: true } : {}),
+    }),
   },
     h('span', { className: 'duc-foot-icon' }, RadarIcon()),
     wide === true ? h('span', { className: 'duc-foot-label' }, t('nav')) : null,
@@ -1310,9 +1374,28 @@ function FooterButton({ t, wide }) {
 // Seat 3: the popup modal in the shell overlay layer.
 // ---------------------------------------------------------------------------
 
-function PopupBody({ t }) {
+/**
+ * The popup radar body. When `autoRun` is armed (the sidebar trigger sets it
+ * while the auto-update preference is on), the first loaded scan starts
+ * "update all" over every outdated auto-updatable package — the same path as
+ * the toolbar button, progress visible in this very popup.
+ */
+function PopupBody({ t, autoRun = false }) {
   const { status, error, busy, load, needRestart, notifyUpdated } = useCopilotData(true)
   const { bulk, bulkResult, runAll } = useBulkUpdate()
+  // One click arms one run: the ref keeps StrictMode re-runs and re-clicks
+  // mid-run from starting a second bulk pass.
+  const autoRanRef = useRef(false)
+
+  useEffect(() => {
+    if (!autoRun || status === null || autoRanRef.current) return
+    setUi({ autoRunAll: false }) // consume immediately — one click, one run
+    autoRanRef.current = true
+    if (autoTargetsOf(status.plugins).length > 0 && !bulk.running) onRunAll(status.plugins)
+    // Intentionally not depending on onRunAll/bulk: only the arming flag and
+    // the scan arrival may start the pass.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRun, status])
 
   async function onRunAll(plugins) {
     const results = await runAll(plugins)
@@ -1373,13 +1456,14 @@ function CopilotOverlay({ t }) {
           h('h2', null, t('nav')),
           h('div', { className: 'duc-sub' }, t('subtitle'))),
         h('button', { className: 'duc-modal-x', onClick: () => setUi({ open: false }), 'aria-label': t('close') }, '✕')),
-      h('div', { className: 'duc-modal-body' }, h(PopupBody, { t }))))
+      h('div', { className: 'duc-modal-body' }, h(PopupBody, { t, autoRun: ui.autoRunAll === true }))))
 }
 
 exports.name = 'dsh-update-copilot'
-// Test seam (see test/sse-client.test.mjs); namespaced so the descriptor's
-// public shape stays exactly { name, inject, apply }.
-exports.__test = { consumeUpdateResponse }
+// Test seam (see test/sse-client.test.mjs, test/auto-update.test.mjs);
+// namespaced so the descriptor's public shape stays exactly { name, inject,
+// apply }.
+exports.__test = { consumeUpdateResponse, autoTargetsOf }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.
 exports.inject = ['slots', 'locale']
