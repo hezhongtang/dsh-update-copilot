@@ -61,7 +61,7 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成更新要点、�
 |---|---|---|
 | `update_copilot_scan` | 读 | 全量扫描：核心 + 所有 profile，按包合并（10 分钟缓存，`force` 强制刷新） |
 | `update_copilot_brief` | 读 | 单个包的 semver 跨度、风险、变更材料与建议；可传 `profile` 限定只看一个 profile，不传则每个装有该包的 profile 都出一份 |
-| `update_copilot_update` | 写 | 执行一次**已确认**的更新——不传 `profile` 时在装有该包的所有 profile 里执行（指令完全一样）；npm/github 通道走官方 `dsh plugin` CLI（失败/超时自动重试，默认共 3 次，1s/3s 退避）；`link:` 本地目录在 checkout 内执行 git pull（自动暂存 → 拉取 → 恢复，冲突交还手动处理），或传 `source: "remote"` 把依赖切换到 npm 已发布版本（包未发布到 npm 时用 `github:` spec）——会断开本地链接 |
+| `update_copilot_update` | 写 | 执行一次**已确认**的更新——不传 `profile` 时在装有该包的所有 profile 里执行（指令完全一样）；npm/github 通道走官方 `dsh plugin` CLI（瞬时失败自动重试——最多 3 次、指数退避加全抖动；版本不存在、鉴权被拒等确定性错误快速失败）；`link:` 本地目录在 checkout 内执行 git pull（自动暂存 → 拉取 → 恢复，冲突交还手动处理），或传 `source: "remote"` 把依赖切换到 npm 已发布版本（包未发布到 npm 时用 `github:` spec）——会断开本地链接 |
 
 ## 工作原理
 
@@ -75,7 +75,7 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成更新要点、�
 
 npm 通道刻意不信任 `latest` dist-tag：monorepo 子包的这个 tag 常年滞后，会把实际比 tag 更新的安装误报为落后。版本比较采用完整 semver 优先级（含 prerelease），因此 `0.1.0-rc.6 > 0.1.0-rc.5`、`1.0.0 > 1.0.0-rc.1` 都成立。
 
-更新通过两条路径执行，都经过严格校验、不拼接 shell：npm/github 通道走 `dsh plugin --profile <p> add <target>`——和人手动输入的是同一条路径——目标字符串经过 allowlist 校验；`link:` 本地目录在 checkout 内直接跑 git（`git stash push` 暂存本地改动 → `git pull` → `git stash pop` 恢复），pull 失败/超时自动重试（默认共 3 次，1s/3s 退避），合并冲突或恢复冲突绝不自动解决——结果里返回 `attempts`、`stash` 状态与最后一次输出。一键更新 / 一键更新全部，就是在装有该包的每个 profile 里依次执行这条指令。
+更新通过两条路径执行，都经过严格校验、不拼接 shell：npm/github 通道走 `dsh plugin --profile <p> add <target>`——和人手动输入的是同一条路径——目标字符串经过 allowlist 校验；`link:` 本地目录在 checkout 内直接跑 git（`git stash push` 暂存本地改动 → `git pull` → `git stash pop` 恢复）。瞬时失败自动重试：最多共 3 次，间隔采用指数退避 + 全抖动（基准 1s、上限 8s），避免一批更新在网络恢复瞬间同时扎堆重试；确定性错误——包或版本不存在（`E404`、`ETARGET`）、鉴权被拒（`E401`/`403`）、git 直接拒绝（凭据无效、dubious ownership）——跳过剩余次数快速失败。停滞的 `git pull` 会自行中止（`http.lowSpeedLimit`/`http.lowSpeedTime`），不再干等硬超时。合并冲突或恢复冲突绝不自动解决——结果里返回 `attempts`、`stash` 状态与最后一次输出。一键更新 / 一键更新全部，就是在装有该包的每个 profile 里依次执行这条指令。
 
 `link:` 目录还可以**切换到远端源**：copilot 把依赖 spec 改写为 npm 上最新发布的版本（优先查 registry），包未发布到 npm 时改写为 `github:owner/repo#<origin HEAD>`。本地链接断开，此后更新走常规 npm/github 通道。切换是破坏性操作，永远需要显式确认，绝不并入默认 pull 路径。
 
