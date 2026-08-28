@@ -160,6 +160,9 @@ const zh = {
   errSwitchNoRepo: '本地仓库的 origin 不是 GitHub，无法切换远端源。',
   errSwitchUnavailable: '既无 npm 发布，本地仓库也无可用 GitHub 上游，无法切换远端源。',
   errSwitchSpecUnchanged: '依赖 spec 未被改写（仍是本地链接），请手动处理。',
+  liveUpdating: '正在更新：{name}',
+  liveUpdatingProfile: '正在更新：{name}（{profile}）',
+  liveBusy: '有更新正在进行，请稍候',
 }
 
 const en = {
@@ -286,6 +289,9 @@ const en = {
   errSwitchNoRepo: 'The checkout\'s origin is not a GitHub remote — cannot switch to a remote source.',
   errSwitchUnavailable: 'No npm release and no usable GitHub upstream — cannot switch to a remote source.',
   errSwitchSpecUnchanged: 'The dependency spec was not rewritten (still a local link). Handle the switch manually.',
+  liveUpdating: 'Updating: {name}',
+  liveUpdatingProfile: 'Updating: {name} ({profile})',
+  liveBusy: 'An update is running — please wait',
 }
 
 const DUC_STYLES_ID = 'duc-styles'
@@ -348,6 +354,11 @@ function injectStyles() {
     '.duc-chip.duc-repolink:hover{opacity:1;border-color:rgba(127,127,127,.9)}',
     '.duc-cmd{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;border:1px dashed rgba(127,127,127,.4);border-radius:6px;padding:6px 8px;word-break:break-all}',
     '.duc-banner{border:1px solid rgba(80,140,255,.45);background:rgba(80,140,255,.08);border-radius:8px;padding:8px 12px;font-size:12.5px}',
+    // live "update in progress" banner — pulsing dot beside the text, same
+    // banner family as the restart hint so the two states read as siblings
+    '.duc-banner.live{display:flex;align-items:center;gap:8px;border-color:rgba(80,140,255,.55);background:rgba(80,140,255,.12)}',
+    '.duc-live-dot{flex:none;width:8px;height:8px;border-radius:50%;background:#508cff;animation:duc-live-pulse 1s ease-in-out infinite}',
+    '@keyframes duc-live-pulse{0%,100%{opacity:.35}50%{opacity:1}}',
     '.duc-log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;word-break:break-all;border:1px solid rgba(127,127,127,.25);border-radius:6px;padding:8px;max-height:220px;overflow:auto;opacity:.85}',
     '.duc-error{color:#c25050}',
     '.duc-fold{border:none;background:transparent;color:var(--dsw-alias-label-secondary,#6b7280);font-size:12px;opacity:.85;cursor:pointer;padding:4px 0 0;text-align:left;display:inline-flex;align-items:center;gap:4px}',
@@ -369,6 +380,9 @@ function injectStyles() {
     // button's overflow:hidden bounds.
     '.duc-foot-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;box-sizing:border-box;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--dsw-alias-state-error-primary,#d25050);color:#fff;font-size:10px;line-height:1;font-variant-numeric:tabular-nums;pointer-events:none}',
     '.duc-rail .duc-foot-badge{position:absolute;top:2px;right:2px}',
+    // while an update runs, the badge turns into a pulsing dot so the sidebar
+    // keeps showing the activity even with the popup closed
+    '.duc-foot-badge.live{background:var(--dsw-alias-state-info-primary,#508cff);animation:duc-live-pulse 1.1s ease-in-out infinite}',
     // modal popup
     '.duc-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:24px}',
     '.duc-modal{background:var(--dsw-alias-bg-overlay,#fff);color:var(--dsw-alias-label-primary,inherit);border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.4));border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.25);width:min(680px,100%);max-height:min(82vh,780px);display:flex;flex-direction:column;outline:none}',
@@ -708,6 +722,101 @@ function useUi() {
   return useSyncExternalStore(subscribeUi, () => uiState, () => uiState)
 }
 
+// ---------------------------------------------------------------------------
+// Live "update in progress" state, server-truthful.
+//
+// The server keeps a live slot for the currently executing update — recorded
+// from EVERY trigger path (web routes, agent tools, link: switches) — and
+// serves it at /dsh-update-copilot/update-status. One shared poller per page
+// reads it and publishes through a useSyncExternalStore store, so every seat
+// renders the same reality: the sidebar badge turns into a pulsing dot, the
+// popup/panel show a live banner, and update buttons disable while one is
+// running. Without this, a background update (auto-run after the popup
+// closed, an agent-tool update, another tab) only surfaced as the confusing
+// "another update is already running" error when the user clicked Update in
+// the foreground. The poll is a local in-process JSON read (no upstream IO),
+// unrelated to the lazy scan policy.
+// ---------------------------------------------------------------------------
+
+const LIVE_POLL_MS = 2000
+
+let liveState = null // { running, current, progress } | null before the first poll
+const liveSubs = new Set()
+let liveTimer = null
+
+function publishLive(state) {
+  liveState = state
+  for (const notify of liveSubs) notify()
+}
+
+async function pollLive() {
+  let data = null
+  try {
+    const res = await fetch('/dsh-update-copilot/update-status', { cache: 'no-store' })
+    data = await res.json().catch(() => null)
+  } catch { /* transient — keep the last known state */ }
+  if (data !== null && typeof data === 'object') publishLive(data)
+}
+
+function subscribeLive(notify) {
+  liveSubs.add(notify)
+  if (liveTimer === null) {
+    // One timer per page, alive while at least one seat listens — the
+    // sidebar trigger seat keeps it running in web sessions; nothing polls
+    // when the bundle is loaded with no seat mounted.
+    liveTimer = setInterval(pollLive, LIVE_POLL_MS)
+    pollLive()
+  }
+  return () => {
+    liveSubs.delete(notify)
+    if (liveSubs.size === 0 && liveTimer !== null) {
+      clearInterval(liveTimer)
+      liveTimer = null
+    }
+  }
+}
+
+function useLive() {
+  // getServerSnapshot = null: on the server no poll ever ran, render idle.
+  return useSyncExternalStore(subscribeLive, () => liveState, () => null)
+}
+
+/** Normalized "is an update executing right now" from a live snapshot. */
+function liveRunningOf(live) {
+  return live !== null && typeof live === 'object' && live.running === true
+}
+
+/** Minimum gap between forced external-completion rescans (upstream IO). */
+const LIVE_RESCAN_THROTTLE_MS = 30000
+let lastLiveRescanAt = 0
+
+/**
+ * Re-scan when an update this seat did not start finishes (agent tools,
+ * another tab, an auto-run orphaned by closing the popup), so the table
+ * reflects the new versions instead of letting the user re-click an already
+ * updated row. Throttled: an external bulk can finish many packages in quick
+ * succession and every forced scan re-queries upstreams; the executors clear
+ * the scan cache on disk changes, so the unforced fallback read is fresh
+ * there.
+ */
+function useLiveCompletionRefresh(load) {
+  const live = useLive()
+  const wasRunning = useRef(live !== null && live.running === true)
+  useEffect(() => {
+    const running = live !== null && live.running === true
+    if (wasRunning.current && !running) {
+      const now = Date.now()
+      if (now - lastLiveRescanAt >= LIVE_RESCAN_THROTTLE_MS) {
+        lastLiveRescanAt = now
+        load(true)
+      } else {
+        load(false)
+      }
+    }
+    wasRunning.current = running
+  }, [live, load])
+}
+
 /** One scan-data owner shared by the settings page and the popup. */
 function useCopilotData(active) {
   const [status, setStatus] = useState(null)
@@ -732,6 +841,10 @@ function useCopilotData(active) {
 
   const notifyUpdated = useCallback((outcome = null) => {
     if (outcome === null || outcome.requiresRestart !== false) setNeedRestart(true)
+    // Stamp the external-completion throttle: the live poller will also see
+    // this update finish within a second or two, and its refresh should not
+    // double the forced rescan we run right now.
+    lastLiveRescanAt = Date.now()
     setOpsVersion((v) => v + 1)
     load(true)
   }, [load])
@@ -1030,6 +1143,11 @@ function PluginRow({ t, row, categories, onUpdated }) {
   // Live update progress: null = idle; percent=null renders an indeterminate
   // bar (pnpm output carries no percentage yet); phase is the latest stage.
   const [progress, setProgress] = useState(null)
+  // Cross-seat guard: while ANY update runs (auto-run, agent tools, another
+  // tab), the row's own actions disable — the server serializes updates and
+  // would answer the click with "another update is already running".
+  const live = useLive()
+  const liveRunning = liveRunningOf(live)
 
   const canUpdate = row.canAutoUpdate === true
   const switchProfile = row.profiles.length === 1 && row.profiles[0].canSwitch === true
@@ -1100,8 +1218,8 @@ function PluginRow({ t, row, categories, onUpdated }) {
           open ? t('hideBrief') : t('brief')) : null,
         canUpdate ? (busy
           ? h('button', { className: 'duc-btn', disabled: true }, t('updating'))
-          : h('button', { className: 'duc-btn primary', onClick: runUpdate }, t('update'))) : null,
-        switchProfile !== null ? (busy
+          : h('button', { className: 'duc-btn primary', onClick: runUpdate, disabled: liveRunning, title: liveRunning ? t('liveBusy') : undefined }, t('update'))) : null,
+        switchProfile !== null ? (busy || liveRunning
           ? null
           : h('button', {
               className: `duc-btn ${switchConfirming ? 'danger' : ''}`,
@@ -1226,11 +1344,41 @@ function useBulkUpdate() {
   return { bulk, bulkResult, runAll }
 }
 
+/**
+ * Persistent "an update is executing right now" banner for the settings page
+ * and the popup. Renders whenever the server reports a running update —
+ * whoever started it (this seat, the auto-run, the agent tools, another tab).
+ * `current` names the package (and profile for single-profile updates);
+ * `progress` adds the latest stage label or percentage.
+ */
+function LiveBanner({ t }) {
+  const live = useLive()
+  if (!liveRunningOf(live) || live.current === null || live.current === undefined) return null
+  const cur = live.current
+  const label = typeof cur.profile === 'string' && cur.profile !== ''
+    ? t('liveUpdatingProfile', { name: cur.name, profile: cur.profile })
+    : t('liveUpdating', { name: cur.name })
+  let detail = ''
+  const prog = live.progress
+  if (prog !== null && typeof prog === 'object') {
+    if (typeof prog.percent === 'number') detail = ` ${prog.percent}%`
+    else if (typeof prog.phase === 'string' && prog.phase !== '') {
+      detail = ` ${t('progressPhase', { phase: t(`progress_${prog.phase}`) })}`
+    }
+  }
+  return h('div', { className: 'duc-banner live', 'aria-live': 'polite' },
+    h('span', { className: 'duc-live-dot', 'aria-hidden': 'true' }),
+    `${label}…${detail}`)
+}
+
 /** Toolbar actions shared by the settings page and the popup. */
-function UpdateAllButton({ t, plugins, bulk, runAll }) {
+function UpdateAllButton({ t, plugins, bulk, runAll, liveRunning }) {
   const hasTargets = plugins.some((p) => p.canAutoUpdate === true)
   if (bulk.running) {
     return h('span', { className: 'duc-meta' }, t('updatingAll', { i: bulk.index, n: bulk.total, name: bulk.name }))
+  }
+  if (liveRunning) {
+    return h('span', { className: 'duc-meta' }, t('liveBusy'))
   }
   return hasTargets
     ? h('button', { className: 'duc-btn primary', onClick: () => runAll(plugins) }, t('updateAll'))
@@ -1302,6 +1450,9 @@ function AutoUpdatePrefRow({ t }) {
 function CopilotSection({ t }) {
   const { status, error, busy, load, needRestart, opsVersion, notifyUpdated } = useCopilotData(true)
   const { bulk, bulkResult, runAll } = useBulkUpdate()
+  const live = useLive()
+  const liveRunning = liveRunningOf(live)
+  useLiveCompletionRefresh(load)
 
   useEffect(() => { injectStyles() }, [])
 
@@ -1320,7 +1471,8 @@ function CopilotSection({ t }) {
         `${t('lastScan')}: ${fmtClock(status.generatedAt)}`,
         h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
           busy ? t('rescanning') : t('refresh'))) : null,
-      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll }) : null),
+      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, liveRunning }) : null),
+    h(LiveBanner, { t }),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
     error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error} `,
@@ -1346,14 +1498,21 @@ function CopilotSection({ t }) {
 
 function FooterButton({ t, wide }) {
   const ui = useUi()
+  const live = useLive()
   useEffect(() => { injectStyles() }, [])
   const behind = ui.summary !== null ? ui.summary.behindPlugins : 0
+  const liveRunning = liveRunningOf(live)
+  const liveName = liveRunning && live.current !== null && live.current !== undefined
+    ? live.current.name
+    : null
   const showBadge = ui.everOpened && behind > 0 && ui.hideBadge !== true
 
   return h('button', {
     className: wide === true ? 'duc-foot-btn' : 'duc-foot-btn duc-rail',
-    title: showBadge ? t('badgeTitle', { n: behind }) : t('nav'),
-    'aria-label': t('nav'),
+    title: liveRunning
+      ? t('liveUpdating', { name: liveName ?? '…' })
+      : showBadge ? t('badgeTitle', { n: behind }) : t('nav'),
+    'aria-label': liveRunning ? t('liveUpdating', { name: liveName ?? '…' }) : t('nav'),
     'aria-haspopup': 'dialog',
     onClick: () => setUi({
       open: true,
@@ -1365,9 +1524,13 @@ function FooterButton({ t, wide }) {
   },
     h('span', { className: 'duc-foot-icon' }, RadarIcon()),
     wide === true ? h('span', { className: 'duc-foot-label' }, t('nav')) : null,
-    showBadge
-      ? h('span', { className: 'duc-foot-badge' }, String(behind))
-      : null)
+    liveRunning
+      // Pulsing dot: an update is executing right now, whoever started it
+      // (auto-run, agent tools, another tab) — the count returns afterwards.
+      ? h('span', { className: 'duc-foot-badge live' })
+      : showBadge
+        ? h('span', { className: 'duc-foot-badge' }, String(behind))
+        : null)
 }
 
 // ---------------------------------------------------------------------------
@@ -1383,6 +1546,9 @@ function FooterButton({ t, wide }) {
 function PopupBody({ t, autoRun = false }) {
   const { status, error, busy, load, needRestart, notifyUpdated } = useCopilotData(true)
   const { bulk, bulkResult, runAll } = useBulkUpdate()
+  const live = useLive()
+  const liveRunning = liveRunningOf(live)
+  useLiveCompletionRefresh(load)
   // One click arms one run: the ref keeps StrictMode re-runs and re-clicks
   // mid-run from starting a second bulk pass.
   const autoRanRef = useRef(false)
@@ -1412,7 +1578,8 @@ function PopupBody({ t, autoRun = false }) {
             h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
               busy ? t('rescanning') : t('refresh')))
         : null,
-      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll }) : null),
+      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, liveRunning }) : null),
+    h(LiveBanner, { t }),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
     needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
