@@ -11,7 +11,8 @@ var module = { exports: {} }; var exports = module.exports;
  *    update highlights, and one-click / bulk updates.
  *  - sidebar.footer.action: a trigger beside the Settings button. Its badge
  *    hydrates once after mount and once more after startup scan completion — no
- *    ongoing background polling.
+ *    ongoing background polling unless the user opts into the 30-minute
+ *    periodic refresh in settings (one interval per page, this seat drives it).
  *  - shell.overlay: a modal popup with the compact radar — behind rows first,
  *    up-to-date rows folded away; same one-click updates. Opened via the
  *    sidebar button or the `?duc=1` URL parameter (visual-test hook).
@@ -125,6 +126,8 @@ const zh = {
   hideBadgeDesc: '关闭侧栏按钮上的「可更新数量」徽章；弹窗与本页仍会显示完整信息',
   autoUpdate: '点击按钮时自动更新',
   autoUpdateDesc: '开启后，点击侧栏「更新助手」按钮时若发现有落后的插件，立即自动开始「一键更新全部」；dsh 本体仍只报告、不执行',
+  periodicRefresh: '每 30 分钟自动刷新',
+  periodicRefreshDesc: '默认关闭：上游只在启动时和你的操作时被查询。开启后，每 30 分钟在后台强制刷新一次，徽章与打开的雷达视图自动跟进',
   progressPhase: '{phase}…',
   progress_start: '开始更新',
   progress_waiting: '等待服务端完成…（旧版服务端，无实时进度）',
@@ -266,6 +269,8 @@ const en = {
   hideBadgeDesc: 'Turn off the update-count badge on the sidebar button; the popup and this page keep full details',
   autoUpdate: 'Auto-update on button click',
   autoUpdateDesc: 'When on, clicking the sidebar Update Copilot button immediately starts "Update all" if outdated plugins are found; the dsh core stays report-only',
+  periodicRefresh: 'Refresh every 30 minutes',
+  periodicRefreshDesc: 'Off by default: upstreams are queried at startup and on your actions only. When on, a forced refresh runs in the background every 30 minutes, and the badge and any open radar views follow along',
   progressPhase: '{phase}…',
   progress_start: 'Starting update',
   progress_waiting: 'Waiting for the server… (older server, no live progress)',
@@ -712,7 +717,35 @@ function writeAutoUpdatePref(on) {
   } catch { /* storage unavailable — in-memory only */ }
 }
 
-let uiState = { open: false, opener: null, everOpened: false, summary: null, generatedAt: null, hideBadge: readBadgePref(), autoUpdate: readAutoUpdatePref(), autoRunAll: false, operation: null }
+/**
+ * Periodic refresh preference, same per-browser storage as the other toggles.
+ * Off by default: upstreams are touched at startup and on user action; only
+ * an explicit opt-in schedules a forced refresh every 30 minutes.
+ */
+const PERIODIC_PREF_KEY = 'duc.periodicRefresh'
+const PERIODIC_REFRESH_MS = 30 * 60 * 1000
+
+function readPeriodicRefreshPref() {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(PERIODIC_PREF_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writePeriodicRefreshPref(on) {
+  try {
+    localStorage.setItem(PERIODIC_PREF_KEY, on ? '1' : '0')
+  } catch { /* storage unavailable — in-memory only */ }
+}
+
+/** Toggle the periodic refresh option; persists like the badge toggle. */
+function setPeriodicRefresh(on) {
+  writePeriodicRefreshPref(on)
+  setUi({ periodicRefresh: on === true })
+}
+
+let uiState = { open: false, opener: null, everOpened: false, summary: null, generatedAt: null, hideBadge: readBadgePref(), autoUpdate: readAutoUpdatePref(), periodicRefresh: readPeriodicRefreshPref(), refreshTick: 0, autoRunAll: false, operation: null }
 const uiSubs = new Set()
 
 function setUi(patch) {
@@ -849,8 +882,8 @@ function useLiveCompletionRefresh(load) {
   }, [live, load])
 }
 
-function loadBadgeStatus() {
-  return api('/dsh-update-copilot/status')
+function loadBadgeStatus(force = false) {
+  return api(`/dsh-update-copilot/status${force ? '?force=1' : ''}`)
     .then((data) => {
       setUi({ summary: data.summary, generatedAt: data.generatedAt })
       return data
@@ -878,6 +911,17 @@ function useCopilotData(active) {
   }, [])
 
   useEffect(() => { if (active) load(false) }, [active, load])
+
+  // Opt-in periodic refresh: the sidebar seat advances refreshTick every 30
+  // minutes while the preference is on; open radar seats reload here. The
+  // ref keeps the tick the seat mounted with from forcing an extra load.
+  const ui = useUi()
+  const lastRefreshTick = useRef(ui.refreshTick)
+  useEffect(() => {
+    if (ui.refreshTick === lastRefreshTick.current) return
+    lastRefreshTick.current = ui.refreshTick
+    load(true)
+  }, [ui.refreshTick, load])
 
   const notifyUpdated = useCallback((outcome = null) => {
     if (outcome === null || outcome.requiresRestart !== false) setNeedRestart(true)
@@ -1749,6 +1793,20 @@ function AutoUpdatePrefRow({ t }) {
       h('span', { className: 'duc-note' }, t('autoUpdateDesc'))))
 }
 
+/** The opt-in 30-minute periodic refresh preference row. */
+function PeriodicRefreshPrefRow({ t }) {
+  const ui = useUi()
+  return h('label', { className: 'duc-pref' },
+    h('input', {
+      type: 'checkbox',
+      checked: ui.periodicRefresh === true,
+      onChange: (e) => setPeriodicRefresh(e.target.checked),
+    }),
+    h('span', { className: 'duc-pref-body' },
+      h('span', { style: { fontWeight: 500 } }, t('periodicRefresh')),
+      h('span', { className: 'duc-note' }, t('periodicRefreshDesc'))))
+}
+
 function CopilotSection({ t }) {
   const { status, error, busy, load, needRestart, opsVersion, notifyUpdated } = useCopilotData(true)
   const { bulk, bulkResult, runAll } = useBulkUpdate()
@@ -1788,7 +1846,8 @@ function CopilotSection({ t }) {
     status === null && error === null ? h('div', { className: 'duc-note' }, t('loading')) : null,
     h('div', { className: 'duc-card', style: { padding: '10px 12px' } },
       h(BadgePrefRow, { t }),
-      h(AutoUpdatePrefRow, { t })),
+      h(AutoUpdatePrefRow, { t }),
+      h(PeriodicRefreshPrefRow, { t })),
     status !== null ? h(CoreCard, { t, core: status.core }) : null,
     status !== null && status.plugins.length > 0
       ? h('div', { className: 'duc-profiles-hint' }, t('profilesHint'))
@@ -1824,6 +1883,17 @@ function FooterButton({ t, wide }) {
       clearTimeout(retry)
     }
   }, [])
+  // Opt-in periodic refresh (Settings → Update Copilot): while enabled, one
+  // interval per page forces a scan every 30 minutes — this seat re-hydrates
+  // the badge, and the refreshTick tells open radar seats to reload too.
+  useEffect(() => {
+    if (ui.periodicRefresh !== true) return undefined
+    const id = setInterval(() => {
+      loadBadgeStatus(true).catch(() => {})
+      setUi({ refreshTick: uiState.refreshTick + 1 })
+    }, PERIODIC_REFRESH_MS)
+    return () => clearInterval(id)
+  }, [ui.periodicRefresh])
   const behind = ui.summary !== null
     ? (ui.summary.behindPlugins ?? 0) + (ui.summary.behindCore ?? 0)
     : 0
