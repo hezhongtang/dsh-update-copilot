@@ -172,3 +172,26 @@ test('direct official package updates are report-only on every install channel',
   assert.equal(linkedOutcome.code, 'official_package')
   assert.equal(fetched, false)
 })
+
+test('package-wide updates skip profiles where the dep is not a plugin row', async (t) => {
+  t.after(() => {
+    clearScanCache()
+    rmSync(home, { recursive: true, force: true })
+  })
+  // Same dep, two profiles: in `web` the manifest declares bundles and
+  // shared-ui is a plain npm dep that is neither bundle-declared nor a
+  // mounted child — the host never loads it there, so the update pass must
+  // skip that profile. `desktop` declares no bundle list and keeps the
+  // every-dependency fallback (shared-ui there is a dev checkout).
+  writeJson(join(home, 'profiles', 'web', 'package.json'), {
+    dependencies: { 'shared-ui': '^1.0.0' },
+    dsh: { profile: { bundles: ['unrelated-bundle'] } },
+  })
+  writeJson(join(home, 'profiles', 'desktop', 'package.json'), {
+    dependencies: { 'shared-ui': fixtureSpec('link', 'desktop', 'shared-ui') },
+  })
+
+  const outcome = await updatePluginAll('shared-ui', {}, {})
+  assert.equal(outcome.profileCount, 1)
+  assert.equal(outcome.items.length, 1)
+})

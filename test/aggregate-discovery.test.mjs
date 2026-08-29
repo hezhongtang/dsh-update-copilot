@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 const home = mkdtempSync(join(tmpdir(), 'dsh-update-copilot-aggregate-'))
 process.env.DSH_HOME = home
-const { insertedPackageNames, profileDependencyMetadata, visibleProfileDeps } = await import('../lib/scan.js')
+const { insertedPackageNames, pluginMemberNames, profileDependencyMetadata } = await import('../lib/scan.js')
 
 function writeJson(file, value) {
   mkdirSync(join(file, '..'), { recursive: true })
@@ -42,7 +42,10 @@ test('discovers active multi-child aggregates and rejects ordinary, inactive, an
     { name: 'suite-child-b', classification: 'independent', mountedBy: '@example/ui-suite' },
     { name: '@deepseek-ai/official-child', classification: 'official', mountedBy: '@example/ui-suite' },
   ])
-  assert.deepEqual(visibleProfileDeps('generic', generic).map(([name]) => name), ['@example/ui-suite', 'suite-child-a', 'suite-child-b'])
+  // Membership is what the host loads: bundle-declared deps plus verified
+  // patch-mounted children — including the official child, which the radar
+  // then files under its report-only official section rather than plugins.
+  assert.deepEqual([...pluginMemberNames('generic', generic)].sort(), ['@deepseek-ai/official-child', '@example/ui-suite', 'suite-child-a', 'suite-child-b'])
 
   const ordinary = { 'dependency-rich-plugin': '^1.0.0', 'ordinary-child': '^1.0.0' }
   writeJson(join(home, 'profiles', 'ordinary', 'package.json'), { dependencies: ordinary, dsh: { profile: { bundles: ['dependency-rich-plugin'] } } })
@@ -104,7 +107,7 @@ test('discovers active multi-child aggregates and rejects ordinary, inactive, an
     { name: 'z-only', classification: 'independent', mountedBy: 'z-parent' },
     { name: 'a-only', classification: 'independent', mountedBy: 'z-parent' },
   ])
-  assert.deepEqual(visibleProfileDeps('multiple', multiple).map(([name]) => name), Object.keys(multiple))
+  assert.deepEqual([...pluginMemberNames('multiple', multiple)].sort(), Object.keys(multiple).sort())
 
   const ties = { 'z-parent': '^1.0.0', 'a-parent': '^1.0.0', shared: '^1.0.0', 'z-child': '^1.0.0', 'a-child': '^1.0.0' }
   writeJson(join(home, 'profiles', 'ties', 'package.json'), { dependencies: ties, dsh: { profile: { bundles: ['z-parent', 'a-parent'] } } })
