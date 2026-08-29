@@ -745,7 +745,7 @@ function setPeriodicRefresh(on) {
   setUi({ periodicRefresh: on === true })
 }
 
-let uiState = { open: false, opener: null, everOpened: false, summary: null, generatedAt: null, hideBadge: readBadgePref(), autoUpdate: readAutoUpdatePref(), periodicRefresh: readPeriodicRefreshPref(), refreshTick: 0, autoRunAll: false, operation: null }
+let uiState = { open: false, opener: null, summary: null, generatedAt: null, hideBadge: readBadgePref(), autoUpdate: readAutoUpdatePref(), periodicRefresh: readPeriodicRefreshPref(), refreshTick: 0, autoRunAll: false, operation: null }
 const uiSubs = new Set()
 
 function setUi(patch) {
@@ -1913,7 +1913,6 @@ function FooterButton({ t, wide }) {
     onClick: (e) => setUi({
       open: true,
       opener: e.currentTarget,
-      everOpened: true,
       // Auto-update option: this one click also means "update all" — the
       // popup consumes the flag once its first scan arrives.
       ...(ui.autoUpdate === true ? { autoRunAll: true } : {}),
@@ -2139,9 +2138,9 @@ exports.apply = function apply(ctx) {
       const mode = params.get('duc')
       if (params.get('brief') === '1') autoBrief = true
       if (mode === '1') {
-        setUi({ open: true, everOpened: true })
+        setUi({ open: true })
       } else if (mode === 'badge') {
-        setUi({ everOpened: true, ...(params.get('hide') === '1' ? { hideBadge: true } : {}) })
+        if (params.get('hide') === '1') setUi({ hideBadge: true })
         loadBadgeStatus().catch(() => {})
       } else if (mode === 'settings') {
         let tries = 0
