@@ -6,14 +6,12 @@ var module = { exports: {} }; var exports = module.exports;
  * dsh-update-copilot client.
  *
  * Three seats:
- *  - Settings section: the full update radar page (core + every installed
- *    plugin, merged across profiles — one row per package, one-click update
- *    that runs the identical command in every profile that has the package,
- *    plus an "update all" toolbar action; inline update highlights; op log).
- *  - sidebar.footer.action: a trigger beside the Settings button. Lazy badge:
- *    the behind-plugin count appears only after the popup has been opened at
- *    least once this session — no background polling, upstream APIs are only
- *    touched on user action.
+ *  - Settings section: the full update radar page (core + every profile's
+ *    plugins, merged package-centrically with ownership disclosure, inline
+ *    update highlights, and one-click / bulk updates.
+ *  - sidebar.footer.action: a trigger beside the Settings button. Its badge
+ *    hydrates once after mount and once more after startup scan completion — no
+ *    ongoing background polling.
  *  - shell.overlay: a modal popup with the compact radar — behind rows first,
  *    up-to-date rows folded away; same one-click updates. Opened via the
  *    sidebar button or the `?duc=1` URL parameter (visual-test hook).
@@ -53,8 +51,18 @@ const zh = {
   copyCmd: '复制升级命令',
   copied: '已复制',
   pluginsTitle: '插件（跨 profile 合并）',
-  profilesHint: '同一插件可能装在多个 profile（web / headless / desktop…）；这里按包名合并展示，点「更新」会同步更新所有安装了它的 profile——更新指令对每个 profile 完全一样。',
+  profilesHint: '同一插件可能装在多个 profile（web / headless / desktop…）；这里按包名合并展示，只更新具有独立更新资格的 profile。',
   noPlugins: '没有任何插件依赖',
+  mountedBy: '由 {name} 挂载（独立）',
+  mounts: '挂载独立插件：{names}',
+  showMounted: '展开 {name} 挂载的独立插件',
+  hideMounted: '收起 {name} 挂载的独立插件',
+  updateBundle: '更新 bundle',
+  updatingBundle: '正在更新 bundle {i}/{n}：{name}',
+  bundleUpdated: '✓ bundle 更新完成',
+  bundleNoChange: 'bundle 无需更新',
+  bundleFailed: '{n} 项更新失败',
+  mountedUpdates: '{n} 个挂载插件可更新',
   kindNpm: 'npm',
   kindGithub: 'GitHub',
   kindLinked: '本地链接',
@@ -109,8 +117,10 @@ const zh = {
   logsCollapse: '收起日志',
   empty: '还没有任何记录',
   scanSummary: '{p} 个插件 · {b} 个可更新',
+  updatesAvailableSection: '可更新',
+  upToDateSection: '已最新',
   upToDateFold: '{n} 项已最新',
-  badgeTitle: '{n} 个插件可更新',
+  badgeTitle: '{n} 项更新可用',
   hideBadge: '隐藏更新红点',
   hideBadgeDesc: '关闭侧栏按钮上的「可更新数量」徽章；弹窗与本页仍会显示完整信息',
   autoUpdate: '点击按钮时自动更新',
@@ -182,8 +192,18 @@ const en = {
   copyCmd: 'Copy upgrade command',
   copied: 'Copied',
   pluginsTitle: 'Plugins (merged across profiles)',
-  profilesHint: 'A package may be installed in several profiles (web / headless / desktop…). Rows are merged by package name; one click on Update synchronizes the package in every profile that has it — the update command is identical for all profiles.',
+  profilesHint: 'A package may be installed in several profiles (web / headless / desktop…). Rows are merged by package name; Update targets only profiles eligible for an independent update.',
   noPlugins: 'No plugin dependencies installed',
+  mountedBy: 'Mounted by {name} (independent)',
+  mounts: 'Mounts independent plugins: {names}',
+  showMounted: 'Show independent plugins mounted by {name}',
+  hideMounted: 'Hide independent plugins mounted by {name}',
+  updateBundle: 'Update bundle',
+  updatingBundle: 'Updating bundle {i}/{n}: {name}',
+  bundleUpdated: '✓ Bundle update finished',
+  bundleNoChange: 'Bundle is already up to date',
+  bundleFailed: '{n} update(s) failed',
+  mountedUpdates: '{n} mounted update(s) available',
   kindNpm: 'npm',
   kindGithub: 'GitHub',
   kindLinked: 'linked',
@@ -238,8 +258,10 @@ const en = {
   logsCollapse: 'Collapse log',
   empty: 'Nothing recorded yet',
   scanSummary: '{p} plugin(s) · {b} update(s) available',
+  updatesAvailableSection: 'Updates available',
+  upToDateSection: 'Up to date',
   upToDateFold: '{n} up to date',
-  badgeTitle: '{n} plugin update(s) available',
+  badgeTitle: '{n} update(s) available',
   hideBadge: 'Hide update badge',
   hideBadgeDesc: 'Turn off the update-count badge on the sidebar button; the popup and this page keep full details',
   autoUpdate: 'Auto-update on button click',
@@ -319,10 +341,18 @@ function injectStyles() {
     '.duc-collapse-title{flex:1;min-width:0}',
     '.duc-chevron-fallback{font-size:12px;line-height:1}',
     '.duc-note{font-size:12px;opacity:.65}',
+    '.duc-section-label{font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--dsw-alias-label-secondary,#6b7280);padding-top:4px}',
+    '.duc-section-body{display:flex;flex-direction:column;gap:0}',
     '.duc-profiles-hint{font-size:12px;opacity:.75;border-left:2px solid rgba(127,127,127,.35);padding:2px 10px}',
     '.duc-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid rgba(127,127,127,.15)}',
     '.duc-row:first-of-type{border-top:none}',
     '.duc-name{font-weight:500;word-break:break-all}',
+    '.duc-aggregate-toggle{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;border:1px solid rgba(127,127,127,.3);border-radius:4px;background:transparent;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer}',
+    '.duc-aggregate-toggle:hover{border-color:rgba(127,127,127,.8);color:inherit}',
+    '.duc-aggregate-toggle:focus-visible{outline:1px solid var(--dsw-alias-border-l2,#888);outline-offset:1px}',
+    '.duc-mount-chip{opacity:.72;border-style:dotted}',
+    '.duc-mounted-group{margin:0 0 0 10px;padding-left:10px;border-left:2px solid rgba(80,140,255,.35)}',
+    '.duc-mounted-group .duc-row{padding:5px 0}',
     '.duc-chip{font-size:11px;border:1px solid rgba(127,127,127,.4);border-radius:4px;padding:0 5px;opacity:.85}',
     '.duc-chip.duc-cat{opacity:.6;border-style:dashed}',
     '.duc-ver{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}',
@@ -392,7 +422,8 @@ function injectStyles() {
     '.duc-modal-x{margin-left:auto;flex:none;border:none;background:transparent;color:inherit;font-size:14px;line-height:1;cursor:pointer;opacity:.6;padding:5px 7px;border-radius:6px}',
     '.duc-modal-x:hover{opacity:1;background:rgba(127,127,127,.15)}',
     '.duc-modal-body{padding:12px 16px 16px;overflow:auto;display:flex;flex-direction:column;gap:12px}',
-    '.duc-toolbar{display:flex;align-items:center;gap:8px;font-size:12px;opacity:.75}',
+    '.duc-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;opacity:.75}',
+    '.duc-bulk-progress{flex:1 1 180px;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
   ].join('\n')
   // Self-healing replace: a page that kept an older bundle's sheet (same id,
   // possibly without the rules a newer bundle adds) must not block the fresh
@@ -534,7 +565,7 @@ async function consumeUpdateResponse(res, onEvent) {
  * update to one profile. Throws on transport errors and on every answer shape
  * `consumeUpdateResponse` classifies as a failure.
  */
-async function streamUpdate(name, onEvent, profile = undefined, source = undefined) {
+async function streamUpdate(name, onEvent, profile = undefined, source = undefined, profiles = undefined) {
   const res = await fetch('/dsh-update-copilot/update', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -543,6 +574,7 @@ async function streamUpdate(name, onEvent, profile = undefined, source = undefin
       confirm: true,
       ...(profile !== undefined && profile !== '' ? { profile } : {}),
       ...(source !== undefined ? { source } : {}),
+      ...(Array.isArray(profiles) ? { profiles } : {}),
     }),
     cache: 'no-store',
   })
@@ -638,7 +670,7 @@ function mountSettingsNavIconPatch() {
 }
 
 // ---------------------------------------------------------------------------
-// Shared cross-seat UI state: popup open flag + the lazy badge summary.
+// Shared cross-seat UI state: popup open flag + the badge summary.
 // useSyncExternalStore contract: immutable snapshots, notify on replace.
 // ---------------------------------------------------------------------------
 
@@ -680,7 +712,7 @@ function writeAutoUpdatePref(on) {
   } catch { /* storage unavailable — in-memory only */ }
 }
 
-let uiState = { open: false, everOpened: false, summary: null, generatedAt: null, hideBadge: readBadgePref(), autoUpdate: readAutoUpdatePref(), autoRunAll: false }
+let uiState = { open: false, opener: null, everOpened: false, summary: null, generatedAt: null, hideBadge: readBadgePref(), autoUpdate: readAutoUpdatePref(), autoRunAll: false, operation: null }
 const uiSubs = new Set()
 
 function setUi(patch) {
@@ -817,6 +849,14 @@ function useLiveCompletionRefresh(load) {
   }, [live, load])
 }
 
+function loadBadgeStatus() {
+  return api('/dsh-update-copilot/status')
+    .then((data) => {
+      setUi({ summary: data.summary, generatedAt: data.generatedAt })
+      return data
+    })
+}
+
 /** One scan-data owner shared by the settings page and the popup. */
 function useCopilotData(active) {
   const [status, setStatus] = useState(null)
@@ -828,7 +868,7 @@ function useCopilotData(active) {
   const load = useCallback((force) => {
     setBusy(true)
     setError(null)
-    api(`/dsh-update-copilot/status${force ? '?force=1' : ''}`)
+    return api(`/dsh-update-copilot/status${force ? '?force=1' : ''}`)
       .then((data) => {
         setStatus(data)
         setUi({ summary: data.summary, generatedAt: data.generatedAt })
@@ -846,7 +886,7 @@ function useCopilotData(active) {
     // double the forced rescan we run right now.
     lastLiveRescanAt = Date.now()
     setOpsVersion((v) => v + 1)
-    load(true)
+    return load(true)
   }, [load])
 
   return { status, error, busy, load, needRestart, opsVersion, notifyUpdated }
@@ -1130,13 +1170,105 @@ function UpdateResult({ t, result }) {
 
 /**
  * One package row, merged across profiles: the version cell lists every
- * installed profile with its current → latest; a single click on 更新 runs
- * the update in all of them (the update command is identical for every
- * profile). The only remaining two-step action is the destructive
+ * installed profile with its current → latest; a single click on Update runs
+ * only in its explicit eligible profiles. The only remaining two-step action is the destructive
  * link→remote source switch.
  */
-function PluginRow({ t, row, categories, onUpdated }) {
+function rowActionsDisabled(busy, bulkRunning) {
+  return busy || bulkRunning === true
+}
+
+function acquireMutation(kind) {
+  if (uiState.operation !== null) return false
+  setUi({ operation: kind })
+  return true
+}
+
+function releaseMutation() {
+  setUi({ operation: null })
+}
+
+async function withMutationLock(kind, operation) {
+  if (!acquireMutation(kind)) return undefined
+  try {
+    return await operation()
+  } finally {
+    releaseMutation()
+  }
+}
+
+function rowUpdateTarget(row) {
+  return { name: row.name, profiles: row.updatableProfiles ?? [] }
+}
+
+function scopedRowUpdateTarget(row, relationshipProfiles = []) {
+  const target = rowUpdateTarget(row)
+  if (relationshipProfiles.length === 0) return target
+  return { ...target, profiles: target.profiles.filter((profile) => relationshipProfiles.includes(profile)) }
+}
+
+function bundleUpdateTargets(parent, mountedChildren) {
+  const children = []
+  const visit = (nodes, inheritedProfiles = []) => nodes.forEach((node) => {
+    const edgeProfiles = node.relationshipProfiles ?? []
+    const profiles = inheritedProfiles.length === 0
+      ? edgeProfiles
+      : edgeProfiles.length === 0 ? inheritedProfiles : inheritedProfiles.filter((profile) => edgeProfiles.includes(profile))
+    children.push({ row: node.row, relationshipProfiles: profiles })
+    visit(node.children, profiles)
+  })
+  visit(mountedChildren)
+  const seen = new Set()
+  return [{ row: parent, relationshipProfiles: [] }, ...children]
+    .filter(({ row }) => row.canAutoUpdate === true && row.updateAvailable === true)
+    .map(({ row, relationshipProfiles }) => scopedRowUpdateTarget(row, relationshipProfiles))
+    .filter((target) => target.profiles.length > 0)
+    .filter((target) => {
+      const key = `${target.name}\u0000${[...target.profiles].sort().join('\u0000')}`
+      if (seen.has(key)) return false
+      seen.add(key)
+     return true
+     })
+}
+
+function globalUpdateTargets(plugins) {
+  return plugins
+    .filter((row) => row.canAutoUpdate === true && row.updateAvailable === true)
+    .map(rowUpdateTarget)
+}
+
+function mountedUpdateCount(children) {
+  return children.reduce((count, child) => count + (child.row.updateAvailable === true ? 1 : 0) + mountedUpdateCount(child.children), 0)
+}
+
+function shouldShowBundleUpdate(parent, mountedChildren) {
+  if (mountedChildren.length === 0) return false
+  return bundleUpdateTargets(parent, mountedChildren).length > 0
+}
+
+function mountRelationshipInfo(row) {
+  const profiles = row.profiles ?? []
+  const mountedBy = [...new Set([
+    row.mountedBy,
+    ...profiles.map((profile) => profile.mountedBy),
+  ]
+    .filter((parent) => typeof parent === 'string' && parent !== ''))]
+  const relationships = [
+    ...(row.mounts ?? []),
+    ...(row.relationships ?? []),
+    ...profiles.flatMap((profile) => profile.relationships ?? []),
+  ]
+  const mounts = [...new Map(relationships
+    .filter((relation) => typeof relation?.child === 'string' && relation.child !== '')
+    .map((relation) => [`${relation.profile ?? ''}/${relation.child}`, relation]))
+    .values()]
+  return { mountedBy, mounts }
+}
+
+function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refreshing = false, mountedChildren = [], onRunBundle }) {
+  const ui = useUi()
   const [open, setOpen] = useState(autoBrief && row.updateAvailable === true)
+  const [mountedOpen, setMountedOpen] = useState(false)
   const [switchConfirming, setSwitchConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
@@ -1153,9 +1285,15 @@ function PluginRow({ t, row, categories, onUpdated }) {
   const switchProfile = row.profiles.length === 1 && row.profiles[0].canSwitch === true
     ? row.profiles[0].profile
     : null
+  const hasMounted = mountedChildren.length > 0
+  const canUpdateBundle = shouldShowBundleUpdate(row, mountedChildren)
+  const mountedBehind = mountedUpdateCount(mountedChildren)
+  const mountInfo = mountRelationshipInfo(row)
   const note = row.official ? t('officialNote') : null
+  const actionsDisabled = rowActionsDisabled(busy, bulkRunning || refreshing || ui.operation !== null)
 
   async function runUpdate() {
+    if (!acquireMutation('row')) return
     setBusy(true)
     setResult(null)
     setProgress({ percent: null, phase: 'start' })
@@ -1164,19 +1302,21 @@ function PluginRow({ t, row, categories, onUpdated }) {
         if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
         else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
-      })
+      }, undefined, undefined, rowUpdateTarget(row).profiles)
       setResult(outcome)
-      if (outcome.ok && outcome.changed) onUpdated(outcome)
+      if (outcome.ok && outcome.changed) await onUpdated(outcome)
     } catch (e) {
       setResult({ ok: false, error: String(e.message ?? e) })
     } finally {
       setBusy(false)
       setSwitchConfirming(false)
       setProgress(null)
+      releaseMutation()
     }
   }
 
   async function runSwitch() {
+    if (!acquireMutation('switch')) return
     setBusy(true)
     setResult(null)
     setProgress({ percent: null, phase: 'start' })
@@ -1187,13 +1327,14 @@ function PluginRow({ t, row, categories, onUpdated }) {
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
       }, switchProfile, 'remote')
       setResult(outcome)
-      if (outcome.ok && outcome.changed) onUpdated(outcome)
+      if (outcome.ok && outcome.changed) await onUpdated(outcome)
     } catch (e) {
       setResult({ ok: false, error: String(e.message ?? e) })
     } finally {
       setBusy(false)
       setSwitchConfirming(false)
       setProgress(null)
+      releaseMutation()
     }
   }
 
@@ -1201,7 +1342,17 @@ function PluginRow({ t, row, categories, onUpdated }) {
     h('div', { className: 'duc-row' },
       h('span', { className: 'duc-name' }, row.name),
       h(RepoLink, { t, repo: row.repo, repoUrl: row.repoUrl, npmName: row.profiles.some((p) => p.kind === 'npm') ? row.name : undefined }),
+      hasMounted ? h('button', {
+        type: 'button',
+        className: 'duc-aggregate-toggle',
+        onClick: () => setMountedOpen(!mountedOpen),
+        'aria-expanded': mountedOpen,
+        'aria-label': t(mountedOpen ? 'hideMounted' : 'showMounted', { name: row.name }),
+        title: t(mountedOpen ? 'hideMounted' : 'showMounted', { name: row.name }),
+      }, h('span', { 'aria-hidden': 'true' }, h(Chevron, { open: mountedOpen }))) : null,
       h(CategoryChip, { category: row.category, categories }),
+      mountInfo.mountedBy.map((parent) => h('span', { className: 'duc-chip duc-mount-chip', key: parent },
+        t('mountedBy', { name: parent }))),
       h('span', { className: 'duc-ver' },
         row.profiles.map((p) => h('span', {
           key: p.profile,
@@ -1212,19 +1363,29 @@ function PluginRow({ t, row, categories, onUpdated }) {
           : `${p.profile}: ${shortVer(p.current)}`))),
       h('span', { className: `duc-badge ${row.updateAvailable ? 'behind' : 'ok'}` },
         row.updateAvailable ? t('behind') : t('upToDate')),
+      !row.updateAvailable && mountedBehind > 0 ? h('span', { className: 'duc-note' },
+        t('mountedUpdates', { n: mountedBehind })) : null,
+      mountInfo.mounts.length > 0 ? h('span', { className: 'duc-note' },
+        t('mounts', { names: mountInfo.mounts.map((relation) => relation.child).join(', ') })) : null,
       note !== null ? h('span', { className: 'duc-note' }, note) : null,
       h('span', { className: 'duc-actions' },
         row.updateAvailable ? h('button', { className: 'duc-btn', onClick: () => setOpen(!open), disabled: busy },
           open ? t('hideBrief') : t('brief')) : null,
         canUpdate ? (busy
           ? h('button', { className: 'duc-btn', disabled: true }, t('updating'))
-          : h('button', { className: 'duc-btn primary', onClick: runUpdate, disabled: liveRunning, title: liveRunning ? t('liveBusy') : undefined }, t('update'))) : null,
+          : h('button', { className: 'duc-btn primary', onClick: runUpdate, disabled: actionsDisabled || liveRunning, title: liveRunning ? t('liveBusy') : undefined }, t('update'))) : null,
+        canUpdateBundle ? h('button', {
+          className: 'duc-btn',
+          onClick: () => onRunBundle?.(row, mountedChildren),
+          disabled: actionsDisabled || liveRunning,
+        }, t('updateBundle')) : null,
         switchProfile !== null ? (busy || liveRunning
           ? null
           : h('button', {
               className: `duc-btn ${switchConfirming ? 'danger' : ''}`,
               onClick: () => (switchConfirming ? runSwitch() : setSwitchConfirming(true)),
               onBlur: () => setSwitchConfirming(false),
+              disabled: actionsDisabled,
             }, switchConfirming ? t('confirmSwitchRemote') : t('switchRemote'))) : null)),
     progress !== null ? h('div', { className: 'duc-progress-wrap' },
       h('div', { className: 'duc-progress' },
@@ -1237,7 +1398,13 @@ function PluginRow({ t, row, categories, onUpdated }) {
       h('span', { className: 'duc-progress-label' },
         progress.percent !== null ? `${progress.percent}%` : t('progressPhase', { phase: t(`progress_${progress.phase}`) }))) : null,
     result !== null ? h(UpdateResult, { t, result }) : null,
-    open ? h(BriefPanel, { t, name: row.name }) : null)
+    open ? h(BriefPanel, { t, name: row.name }) : null,
+    hasMounted && mountedOpen ? h('div', { className: 'duc-mounted-group' },
+      mountedChildren.map((child) => h(PluginRow, {
+        t, row: child.row, categories, key: child.row.name, onUpdated, bulkRunning, refreshing,
+        mountedChildren: child.children, onRunBundle,
+      }))) : null,
+    )
 }
 
 function CoreCard({ t, core }) {
@@ -1292,25 +1459,110 @@ function CoreCard({ t, core }) {
  * package. `plugins` is the aggregated list from the scan; `compact` folds the
  * up-to-date rows away (popup mode).
  */
-function PluginListCard({ t, plugins, categories, onUpdated, compact = false }) {
+function partitionPluginGroups(plugins) {
+  const mounted = groupMountedRows(plugins)
+  const behind = []
+  const current = []
+  for (const node of mounted) {
+    const group = { parent: node.row, mountedChildren: node.children }
+    if (nodeIsBehind(node)) behind.push(group)
+    else current.push(group)
+  }
+  return { behind, current }
+}
+
+function groupMountedRows(plugins) {
+  const rowsByName = new Map(plugins.map((row) => [row.name, row]))
+  const edgesByParent = new Map()
+  const incoming = new Set()
+
+  function reaches(start, target, seen = new Set()) {
+    if (start === target) return true
+    if (seen.has(start)) return false
+    seen.add(start)
+    return (edgesByParent.get(start) ?? []).some((edge) => reaches(edge.child, target, seen))
+  }
+
+  for (const parent of plugins) {
+    for (const relation of parent.mounts ?? []) {
+      const child = relation?.child
+      const childRow = rowsByName.get(child)
+      if (typeof child !== 'string' || child === parent.name || childRow === undefined) continue
+      if (relation.parent !== parent.name || typeof relation.profile !== 'string') continue
+      const childProfile = (childRow.profiles ?? []).find((profile) => profile.profile === relation.profile)
+      // The child profile is authoritative: a parent may only render its
+      // selected relationship, never a competing inferred edge.
+      if (childProfile?.mountedBy !== parent.name) continue
+      let edge = (edgesByParent.get(parent.name) ?? []).find((candidate) => candidate.child === child)
+      if (edge === undefined) {
+        if (reaches(child, parent.name)) continue
+        edge = { child, profiles: [] }
+        const edges = edgesByParent.get(parent.name) ?? []
+        edges.push(edge)
+        edgesByParent.set(parent.name, edges)
+      }
+      if (!edge.profiles.includes(relation.profile)) edge.profiles.push(relation.profile)
+      incoming.add(child)
+    }
+  }
+
+  function buildNode(row, relationshipProfiles = [], ancestry = new Set()) {
+    const nextAncestry = new Set(ancestry)
+    nextAncestry.add(row.name)
+    const children = []
+    for (const edge of edgesByParent.get(row.name) ?? []) {
+      if (nextAncestry.has(edge.child)) continue
+      const profiles = relationshipProfiles.length === 0
+        ? edge.profiles
+        : edge.profiles.filter((profile) => relationshipProfiles.includes(profile))
+      if (profiles.length === 0) continue
+      children.push(buildNode(rowsByName.get(edge.child), profiles, nextAncestry))
+    }
+    return { row, relationshipProfiles, children }
+  }
+
+  return plugins.filter((row) => !incoming.has(row.name)).map((row) => buildNode(row))
+}
+
+function nodeIsBehind(node) {
+  return node.row.updateAvailable === true || node.children.some(nodeIsBehind)
+}
+
+function PluginListCard({ t, plugins, categories, onUpdated, compact = false, bulkRunning = false, bundleRunning = false, refreshing = false, onRunBundle }) {
   const [showOk, setShowOk] = useState(false)
-  const behindRows = plugins.filter((r) => r.updateAvailable)
-  const okRows = plugins.filter((r) => !r.updateAvailable)
-  const rows = compact ? [...behindRows, ...(showOk ? okRows : [])] : plugins
+  const groups = partitionPluginGroups(plugins)
+  const renderGroups = (items) => items.map(({ parent, mountedChildren }) => h(PluginRow, {
+    t, row: parent, categories, key: parent.name, onUpdated,
+    bulkRunning: bulkRunning || bundleRunning, refreshing, mountedChildren, onRunBundle,
+  }))
+  const rows = groupMountedRows(plugins).map((node) => ({ parent: node.row, mountedChildren: node.children }))
 
   return h('div', { className: 'duc-card' },
     h('div', { className: 'duc-card-title' },
       t('pluginsTitle'), ' ',
-      h('span', { className: 'duc-note' }, t('scanSummary', { p: plugins.length, b: behindRows.length }))),
+      h('span', { className: 'duc-note' }, t('scanSummary', { p: plugins.length, b: groups.behind.length }))),
     plugins.length === 0
       ? h('div', { className: 'duc-note' }, t('noPlugins'))
-      : rows.map((row) => h(PluginRow, { t, row, categories, key: row.name, onUpdated })),
-    compact && okRows.length > 0
-      ? h('button', { type: 'button', className: 'duc-fold', onClick: () => setShowOk(!showOk), 'aria-expanded': showOk },
-          h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
-            h(Chevron, { open: showOk })),
-          t('upToDateFold', { n: okRows.length }))
-      : null)
+      : compact
+        ? h(React.Fragment, null,
+            h('div', { className: 'duc-section-label' }, t('updatesAvailableSection')),
+            renderGroups(groups.behind),
+            groups.current.length > 0 ? h('button', {
+              type: 'button',
+              className: 'duc-collapse-head',
+              onClick: () => setShowOk(!showOk),
+              'aria-expanded': showOk,
+            },
+              h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
+                h(Chevron, { open: showOk })),
+              h('span', { className: 'duc-collapse-title' }, t('upToDateSection')),
+              h('span', { className: 'duc-note' }, t('upToDateFold', { n: groups.current.length }))) : null,
+            showOk ? h('div', { className: 'duc-section-body' }, renderGroups(groups.current)) : null)
+        : rows.map(({ parent, mountedChildren }) => h(PluginRow, {
+            t, row: parent, categories, key: parent.name, onUpdated,
+            bulkRunning: bulkRunning || bundleRunning, refreshing, mountedChildren, onRunBundle,
+          })),
+    )
 }
 
 /**
@@ -1321,25 +1573,31 @@ function PluginListCard({ t, plugins, categories, onUpdated, compact = false }) 
 function useBulkUpdate() {
   const [bulk, setBulk] = useState({ running: false, index: 0, total: 0, name: null })
   const [bulkResult, setBulkResult] = useState(null)
-  const runAll = useCallback(async (plugins) => {
-    const targets = plugins.filter((p) => p.canAutoUpdate === true)
+  const runAll = useCallback(async (plugins, onUpdated) => {
+    const targets = globalUpdateTargets(plugins)
     if (targets.length === 0) return
-    setBulkResult(null)
-    setBulk({ running: true, index: 0, total: targets.length, name: null })
-    const results = []
-    for (let i = 0; i < targets.length; i += 1) {
-      setBulk({ running: true, index: i + 1, total: targets.length, name: targets[i].name })
+    return withMutationLock('all', async () => {
+      setBulkResult(null)
+      setBulk({ running: true, index: 0, total: targets.length, name: null })
+      const results = []
       try {
-        results.push({ name: targets[i].name, outcome: await streamUpdate(targets[i].name, () => {}) })
-      } catch (e) {
-        results.push({ name: targets[i].name, outcome: { ok: false, error: String(e.message ?? e) } })
+        for (let i = 0; i < targets.length; i += 1) {
+          setBulk({ running: true, index: i + 1, total: targets.length, name: targets[i].name })
+          try {
+            results.push({ name: targets[i].name, outcome: await streamUpdate(targets[i].name, () => {}, undefined, undefined, targets[i].profiles) })
+          } catch (e) {
+            results.push({ name: targets[i].name, outcome: { ok: false, error: String(e.message ?? e) } })
+          }
+        }
+        const failed = results.filter((r) => r.outcome.ok !== true).length
+        const changed = results.some((r) => r.outcome.changed === true)
+        setBulkResult({ failed, changed, requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+        if (changed) await onUpdated?.({ requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+        return results
+      } finally {
+        setBulk({ running: false, index: 0, total: 0, name: null })
       }
-    }
-    const failed = results.filter((r) => r.outcome.ok !== true).length
-    const changed = results.some((r) => r.outcome.changed === true)
-    setBulk({ running: false, index: 0, total: 0, name: null })
-    setBulkResult({ failed, changed, requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
-    return results
+    })
   }, [])
   return { bulk, bulkResult, runAll }
 }
@@ -1371,17 +1629,61 @@ function LiveBanner({ t }) {
     `${label}…${detail}`)
 }
 
+function useBundleUpdate() {
+  const [bundle, setBundle] = useState({ running: false, index: 0, total: 0, name: null })
+  const [bundleResult, setBundleResult] = useState(null)
+  const runBundle = useCallback(async (parent, mountedChildren, onUpdated) => {
+    const targets = bundleUpdateTargets(parent, mountedChildren)
+    if (targets.length === 0) return undefined
+    return withMutationLock('bundle', async () => {
+      setBundleResult(null)
+      setBundle({ running: true, index: 0, total: targets.length, name: null })
+      const results = []
+      try {
+        for (let i = 0; i < targets.length; i += 1) {
+          const target = targets[i]
+          setBundle({ running: true, index: i + 1, total: targets.length, name: target.name })
+          try {
+            results.push({ ...target, outcome: await streamUpdate(target.name, () => {}, undefined, undefined, target.profiles) })
+          } catch (e) {
+            results.push({ ...target, outcome: { ok: false, error: String(e.message ?? e) } })
+          }
+        }
+        const failed = results.filter((result) => result.outcome.ok !== true).length
+        const changed = results.some((result) => result.outcome.changed === true)
+        setBundleResult({ parent: parent.name, results, failed })
+        if (changed) await onUpdated?.({ requiresRestart: results.some((result) => result.outcome.requiresRestart === true) })
+        return results
+      } finally {
+        setBundle({ running: false, index: 0, total: 0, name: null })
+      }
+    })
+  }, [])
+  return { bundle, bundleResult, runBundle }
+}
+
+function BundleUpdateResult({ t, result }) {
+  const changed = result.results.some((item) => item.outcome.changed === true)
+  return h('div', { className: `duc-note ${result.failed > 0 ? 'duc-error' : ''}` },
+    result.failed > 0 ? t('bundleFailed', { n: result.failed }) : (changed ? t('bundleUpdated') : t('bundleNoChange')),
+    h('ul', { className: 'duc-list' }, result.results.map((item) => h('li', { key: item.name },
+      item.outcome.ok === true
+        ? (item.outcome.changed ? t('itemUpdated', { p: item.name }) : t('itemCurrent', { p: item.name }))
+        : `${t('itemFailed', { p: item.name })} — ${localizedUpdateError(t, item.outcome)}`))))
+}
+
 /** Toolbar actions shared by the settings page and the popup. */
-function UpdateAllButton({ t, plugins, bulk, runAll, liveRunning }) {
-  const hasTargets = plugins.some((p) => p.canAutoUpdate === true)
+function UpdateAllButton({ t, plugins, bulk, runAll, liveRunning, blocked = false }) {
+  const hasTargets = globalUpdateTargets(plugins).length > 0
   if (bulk.running) {
-    return h('span', { className: 'duc-meta' }, t('updatingAll', { i: bulk.index, n: bulk.total, name: bulk.name }))
+    return h('span', { className: 'duc-bulk-progress', title: t('updatingAll', { i: bulk.index, n: bulk.total, name: bulk.name }) },
+      t('updatingAll', { i: bulk.index, n: bulk.total, name: bulk.name }))
   }
   if (liveRunning) {
     return h('span', { className: 'duc-meta' }, t('liveBusy'))
   }
   return hasTargets
-    ? h('button', { className: 'duc-btn primary', onClick: () => runAll(plugins) }, t('updateAll'))
+    ? h('button', { className: 'duc-btn primary', onClick: () => runAll(plugins), disabled: blocked }, t('updateAll'))
     : null
 }
 
@@ -1453,14 +1755,17 @@ function CopilotSection({ t }) {
   const live = useLive()
   const liveRunning = liveRunningOf(live)
   useLiveCompletionRefresh(load)
+  const { bundle, bundleResult, runBundle } = useBundleUpdate()
+  const ui = useUi()
 
   useEffect(() => { injectStyles() }, [])
 
   async function onRunAll(plugins) {
-    const results = await runAll(plugins)
-    if (results === undefined) return
-    const changed = results.some((r) => r.outcome.changed === true)
-    if (changed) notifyUpdated({ requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+    await runAll(plugins, notifyUpdated)
+  }
+
+  async function onRunBundle(parent, mountedChildren) {
+    await runBundle(parent, mountedChildren, notifyUpdated)
   }
 
   return h('div', { className: 'duc' },
@@ -1469,12 +1774,14 @@ function CopilotSection({ t }) {
       h('span', { className: 'duc-sub' }, t('subtitle')),
       status !== null ? h('span', { className: 'duc-meta' },
         `${t('lastScan')}: ${fmtClock(status.generatedAt)}`,
-        h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
+        h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy || ui.operation !== null },
           busy ? t('rescanning') : t('refresh'))) : null,
-      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, liveRunning }) : null),
+      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, liveRunning, blocked: bundle.running || busy || ui.operation !== null }) : null),
     h(LiveBanner, { t }),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
+    bundle.running ? h('div', { className: 'duc-bulk-progress', title: t('updatingBundle', bundle) }, t('updatingBundle', bundle)) : null,
+    bundleResult !== null && !bundle.running ? h(BundleUpdateResult, { t, result: bundleResult }) : null,
     error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error} `,
       h('button', { className: 'duc-btn', onClick: () => load(false) }, t('retry'))) : null,
     needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
@@ -1487,7 +1794,10 @@ function CopilotSection({ t }) {
       ? h('div', { className: 'duc-profiles-hint' }, t('profilesHint'))
       : null,
     status !== null
-      ? h(PluginListCard, { t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated })
+      ? h(PluginListCard, {
+          t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated,
+          bulkRunning: bulk.running, bundleRunning: bundle.running, refreshing: busy || ui.operation !== null, onRunBundle,
+        })
       : null,
     h(LogTail, { t, opsVersion }))
 }
@@ -1500,12 +1810,28 @@ function FooterButton({ t, wide }) {
   const ui = useUi()
   const live = useLive()
   useEffect(() => { injectStyles() }, [])
-  const behind = ui.summary !== null ? ui.summary.behindPlugins : 0
+  useEffect(() => {
+    let cancelled = false
+    const refresh = () => {
+      loadBadgeStatus().catch(() => {})
+    }
+    refresh()
+    // The host starts its forced background scan during boot. A second bounded
+    // read picks up its cache result without turning the launcher into a poller.
+    const retry = setTimeout(() => { if (!cancelled) refresh() }, 1500)
+    return () => {
+      cancelled = true
+      clearTimeout(retry)
+    }
+  }, [])
+  const behind = ui.summary !== null
+    ? (ui.summary.behindPlugins ?? 0) + (ui.summary.behindCore ?? 0)
+    : 0
   const liveRunning = liveRunningOf(live)
   const liveName = liveRunning && live.current !== null && live.current !== undefined
     ? live.current.name
     : null
-  const showBadge = ui.everOpened && behind > 0 && ui.hideBadge !== true
+  const showBadge = behind > 0 && ui.hideBadge !== true
 
   return h('button', {
     className: wide === true ? 'duc-foot-btn' : 'duc-foot-btn duc-rail',
@@ -1514,8 +1840,9 @@ function FooterButton({ t, wide }) {
       : showBadge ? t('badgeTitle', { n: behind }) : t('nav'),
     'aria-label': liveRunning ? t('liveUpdating', { name: liveName ?? '…' }) : t('nav'),
     'aria-haspopup': 'dialog',
-    onClick: () => setUi({
+    onClick: (e) => setUi({
       open: true,
+      opener: e.currentTarget,
       everOpened: true,
       // Auto-update option: this one click also means "update all" — the
       // popup consumes the flag once its first scan arrives.
@@ -1562,12 +1889,15 @@ function PopupBody({ t, autoRun = false }) {
     // the scan arrival may start the pass.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRun, status])
+  const { bundle, bundleResult, runBundle } = useBundleUpdate()
+  const ui = useUi()
 
   async function onRunAll(plugins) {
-    const results = await runAll(plugins)
-    if (results === undefined) return
-    const changed = results.some((r) => r.outcome.changed === true)
-    if (changed) notifyUpdated({ requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+    await runAll(plugins, notifyUpdated)
+  }
+
+  async function onRunBundle(parent, mountedChildren) {
+    await runBundle(parent, mountedChildren, notifyUpdated)
   }
 
   return h('div', { className: 'duc' },
@@ -1575,13 +1905,15 @@ function PopupBody({ t, autoRun = false }) {
       status !== null
         ? h(React.Fragment, null,
             `${t('lastScan')}: ${fmtClock(status.generatedAt)}`,
-            h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy },
+            h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy || ui.operation !== null },
               busy ? t('rescanning') : t('refresh')))
         : null,
-      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, liveRunning }) : null),
+      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, liveRunning, blocked: bundle.running || busy || ui.operation !== null }) : null),
     h(LiveBanner, { t }),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
+    bundle.running ? h('div', { className: 'duc-bulk-progress', title: t('updatingBundle', bundle) }, t('updatingBundle', bundle)) : null,
+    bundleResult !== null && !bundle.running ? h(BundleUpdateResult, { t, result: bundleResult }) : null,
     needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
     error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error}`) : null,
     status === null && error === null ? h('div', { className: 'duc-note' }, t('loading')) : null,
@@ -1589,8 +1921,34 @@ function PopupBody({ t, autoRun = false }) {
     status !== null
       ? h(PluginListCard, {
           t, plugins: status.plugins, categories: status.categories, compact: true, onUpdated: notifyUpdated,
+          bulkRunning: bulk.running, bundleRunning: bundle.running, refreshing: busy || ui.operation !== null, onRunBundle,
         })
       : null)
+}
+
+function trapModalFocus(modal, event, activeElement = document.activeElement) {
+  if (modal === null) return false
+  const focusable = [...modal.querySelectorAll(
+    'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+  )]
+  if (focusable.length === 0) {
+    event.preventDefault()
+    modal.focus()
+    return true
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && (activeElement === modal || activeElement === first)) {
+    event.preventDefault()
+    last.focus()
+    return true
+  }
+  if (!event.shiftKey && activeElement === last) {
+    event.preventDefault()
+    first.focus()
+    return true
+  }
+  return false
 }
 
 function CopilotOverlay({ t }) {
@@ -1601,10 +1959,19 @@ function CopilotOverlay({ t }) {
     if (!ui.open) return undefined
     injectStyles()
     modalRef.current?.focus()
-    const onKey = (e) => { if (e.key === 'Escape') setUi({ open: false }) }
+    const onKey = (e) => {
+      if (e.key === 'Escape') setUi({ open: false })
+      else if (e.key === 'Tab') trapModalFocus(modalRef.current, e)
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [ui.open])
+
+  useEffect(() => {
+    if (ui.open || ui.opener == null) return
+    ui.opener.focus?.()
+    setUi({ opener: null })
+  }, [ui.open, ui.opener])
 
   if (!ui.open) return null
 
@@ -1630,7 +1997,26 @@ exports.name = 'dsh-update-copilot'
 // Test seam (see test/sse-client.test.mjs, test/auto-update.test.mjs);
 // namespaced so the descriptor's public shape stays exactly { name, inject,
 // apply }.
-exports.__test = { consumeUpdateResponse, autoTargetsOf }
+exports.__test = {
+  consumeUpdateResponse,
+  autoTargetsOf,
+  loadBadgeStatus,
+  getUiState: () => uiState,
+  acquireMutation,
+  releaseMutation,
+  withMutationLock,
+  partitionPluginGroups,
+  groupMountedRows,
+  rowActionsDisabled,
+  rowUpdateTarget,
+  scopedRowUpdateTarget,
+  bundleUpdateTargets,
+  globalUpdateTargets,
+  mountedUpdateCount,
+  shouldShowBundleUpdate,
+  mountRelationshipInfo,
+  trapModalFocus,
+}
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.
 exports.inject = ['slots', 'locale']
@@ -1686,10 +2072,7 @@ exports.apply = function apply(ctx) {
         setUi({ open: true, everOpened: true })
       } else if (mode === 'badge') {
         setUi({ everOpened: true, ...(params.get('hide') === '1' ? { hideBadge: true } : {}) })
-        fetch('/dsh-update-copilot/status', { cache: 'no-store' })
-          .then((res) => res.json())
-          .then((data) => setUi({ summary: data.summary, generatedAt: data.generatedAt }))
-          .catch(() => {})
+        loadBadgeStatus().catch(() => {})
       } else if (mode === 'settings') {
         let tries = 0
         let selectedUs = false

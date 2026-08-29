@@ -115,3 +115,34 @@ test('aggregated rows stay lossless-JSON safe (no explicit undefined)', () => {
   assert.equal(labeled.category, 'ui') // labels still merge when present
   assertNoUndefined(labeled)
 })
+
+test('aggregate rows retain profile-scoped mounts and target independently updatable profiles', () => {
+  const plugins = aggregateRows([
+    {
+      profile: 'web',
+      plugins: [row({ name: '@example/ui-suite', classification: 'aggregate' })],
+      relationships: [{ profile: 'web', parent: '@example/ui-suite', child: '@example/managed-ui', evidence: 'patch-insert+production-dependency' }],
+    },
+    {
+      profile: 'desktop',
+      plugins: [row({ name: '@example/ui-suite', classification: 'independent' })],
+      relationships: [],
+    },
+  ])
+  const aggregate = plugins[0]
+  assert.deepEqual(aggregate.updatableProfiles, ['web', 'desktop'])
+  assert.deepEqual(aggregate.mounts.map((child) => `${child.profile}/${child.child}`), ['web/@example/managed-ui'])
+})
+
+test('mixed cross-profile mounts preserve each profile selection without changing targets', () => {
+  const plugins = aggregateRows([
+    { profile: 'web', plugins: [row({ name: 'shared-ui', classification: 'independent' })], relationships: [] },
+    {
+      profile: 'desktop',
+      plugins: [row({ name: '@example/ui-suite', classification: 'aggregate' })],
+      relationships: [{ profile: 'desktop', parent: '@example/ui-suite', child: 'shared-ui', evidence: 'patch-insert+production-dependency' }],
+    },
+  ])
+  assert.deepEqual(plugins.find((plugin) => plugin.name === 'shared-ui').updatableProfiles, ['web'])
+  assert.equal(plugins.find((plugin) => plugin.name === '@example/ui-suite').mounts[0].profile, 'desktop')
+})

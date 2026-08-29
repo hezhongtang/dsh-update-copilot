@@ -227,3 +227,225 @@ test('array-like JSON is rejected, not returned as an outcome', async () => {
     (err) => err instanceof Error && /did not answer with a stream or an outcome/.test(err.message),
   )
 })
+
+test('badge status hydration reads the no-store status endpoint into shared UI state', async (t) => {
+  const originalFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (path, options) => {
+    calls.push({ path, options })
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ summary: { behindPlugins: 2 }, generatedAt: '2026-08-22T00:00:00.000Z' }),
+    }
+  }
+  t.after(() => { globalThis.fetch = originalFetch })
+
+  const { loadBadgeStatus, getUiState } = loadBundle().__test
+  await loadBadgeStatus()
+  assert.deepEqual(calls, [{ path: '/dsh-update-copilot/status', options: { cache: 'no-store' } }])
+  assert.deepEqual(getUiState().summary, { behindPlugins: 2 })
+  assert.equal(getUiState().generatedAt, '2026-08-22T00:00:00.000Z')
+})
+
+test('compact plugin sections keep mounted children with their parent group', () => {
+  const { partitionPluginGroups } = loadBundle().__test
+  const currentParent = {
+    name: 'ui-suite',
+    updateAvailable: false,
+    mounts: [{ profile: 'web', parent: 'ui-suite', child: 'ui-child' }],
+  }
+  const currentChild = { name: 'ui-child', updateAvailable: false, profiles: [{ profile: 'web', mountedBy: 'ui-suite' }] }
+  const behindParent = {
+    name: 'other-suite',
+    updateAvailable: true,
+    mounts: [{ profile: 'web', parent: 'other-suite', child: 'other-child' }],
+  }
+  const behindChild = { name: 'other-child', updateAvailable: false, profiles: [{ profile: 'web', mountedBy: 'other-suite' }] }
+  const groups = partitionPluginGroups([currentParent, currentChild, behindParent, behindChild])
+
+  assert.deepEqual(groups.current.map((group) => group.parent.name), ['ui-suite'])
+  assert.deepEqual(groups.behind.map((group) => group.parent.name), ['other-suite'])
+  assert.deepEqual(groups.current[0].mountedChildren.map((child) => child.row.name), ['ui-child'])
+  assert.deepEqual(groups.behind[0].mountedChildren.map((child) => child.row.name), ['other-child'])
+  assert.equal(groups.behind.some((group) => group.mountedChildren.some((child) => child.row.name === 'ui-child')), false)
+  assert.equal(groups.current.some((group) => group.mountedChildren.some((child) => child.row.name === 'other-child')), false)
+})
+
+test('bulk updates disable row actions while preserving the row state', () => {
+  const { rowActionsDisabled } = loadBundle().__test
+  assert.equal(rowActionsDisabled(false, false), false)
+  assert.equal(rowActionsDisabled(true, false), true)
+  assert.equal(rowActionsDisabled(false, true), true)
+})
+
+test('mounted plugins retain independent update action metadata and relationship hints', () => {
+  const { mountRelationshipInfo, rowActionsDisabled } = loadBundle().__test
+  const sidebar = {
+    name: 'dsh-better-sidebar',
+    canAutoUpdate: true,
+    profiles: [{ profile: 'web', mountedBy: '@example/web-suite' }],
+    mounts: [],
+  }
+  const suite = {
+    name: '@example/web-suite',
+    canAutoUpdate: true,
+    profiles: [{ profile: 'web' }],
+    relationships: [{ profile: 'web', parent: '@example/web-suite', child: 'dsh-better-sidebar' }],
+  }
+
+  assert.deepEqual(mountRelationshipInfo(sidebar), { mountedBy: ['@example/web-suite'], mounts: [] })
+  assert.deepEqual(mountRelationshipInfo(suite).mounts.map((relation) => relation.child), ['dsh-better-sidebar'])
+  assert.equal(sidebar.canAutoUpdate, true)
+  assert.equal(rowActionsDisabled(false, false), false)
+
+  const profileScoped = {
+    profiles: [{ profile: 'web', relationships: [{ child: 'dsh-better-sidebar' }] }],
+  }
+  assert.deepEqual(mountRelationshipInfo(profileScoped).mounts.map((relation) => relation.child), ['dsh-better-sidebar'])
+})
+
+test('mounted rows group deterministically without duplicating children', () => {
+  const { groupMountedRows, partitionPluginGroups } = loadBundle().__test
+  const parent = { name: 'bundle-a', updateAvailable: false, mounts: [{ profile: 'web', parent: 'bundle-a', child: 'child' }] }
+  const competingParent = { name: 'bundle-b', updateAvailable: true, mounts: [{ profile: 'web', parent: 'bundle-b', child: 'child' }] }
+  const child = { name: 'child', updateAvailable: true, profiles: [{ profile: 'web', mountedBy: 'bundle-a' }] }
+  const nodes = groupMountedRows([parent, competingParent, child])
+  assert.deepEqual(nodes.map((node) => node.row.name), ['bundle-a', 'bundle-b'])
+  assert.deepEqual(nodes[0].children.map((node) => node.row.name), ['child'])
+  assert.deepEqual(partitionPluginGroups([parent, competingParent, child]).behind.map((group) => group.parent.name), ['bundle-a', 'bundle-b'])
+})
+
+test('child and bundle update targets preserve independent names and profile scopes', () => {
+  const { rowUpdateTarget, bundleUpdateTargets } = loadBundle().__test
+  const parent = { name: 'bundle', canAutoUpdate: true, updateAvailable: true, updatableProfiles: ['web'] }
+  const child = { row: { name: 'child', canAutoUpdate: true, updateAvailable: true, updatableProfiles: ['desktop'] }, children: [] }
+  const blocked = { row: { name: 'blocked', canAutoUpdate: false, updateAvailable: true, updatableProfiles: ['headless'] }, children: [] }
+  assert.deepEqual(rowUpdateTarget(child.row), { name: 'child', profiles: ['desktop'] })
+  assert.deepEqual(bundleUpdateTargets(parent, [child, blocked]), [
+    { name: 'bundle', profiles: ['web'] },
+    { name: 'child', profiles: ['desktop'] },
+  ])
+})
+
+test('bundle targets exclude current rows and deduplicate equivalent name/profile scopes', () => {
+  const { bundleUpdateTargets } = loadBundle().__test
+  const parent = { name: 'bundle', canAutoUpdate: true, updateAvailable: false, updatableProfiles: ['web'] }
+  const outdated = { row: { name: 'child', canAutoUpdate: true, updateAvailable: true, updatableProfiles: ['desktop', 'web'] }, children: [] }
+  const duplicate = { row: { name: 'child', canAutoUpdate: true, updateAvailable: true, updatableProfiles: ['web', 'desktop'] }, children: [] }
+  const current = { row: { name: 'current', canAutoUpdate: true, updateAvailable: false, updatableProfiles: ['web'] }, children: [] }
+
+  assert.deepEqual(bundleUpdateTargets(parent, [outdated, duplicate, current]), [
+    { name: 'child', profiles: ['desktop', 'web'] },
+  ])
+  assert.deepEqual(bundleUpdateTargets(parent, [current]), [])
+})
+
+test('bundle targets intersect mounted edge profiles and honor explicit competing ownership', () => {
+  const { groupMountedRows, bundleUpdateTargets, globalUpdateTargets } = loadBundle().__test
+  const competing = { name: 'wrong-bundle', mounts: [{ profile: 'web', parent: 'wrong-bundle', child: 'child' }] }
+  const parent = { name: 'web-bundle', mounts: [{ profile: 'web', parent: 'web-bundle', child: 'child' }] }
+  const child = {
+    name: 'child', canAutoUpdate: true, updateAvailable: true, updatableProfiles: ['web', 'desktop'],
+    profiles: [{ profile: 'web', mountedBy: 'web-bundle' }, { profile: 'desktop' }],
+  }
+  const nodes = groupMountedRows([competing, parent, child])
+  assert.deepEqual(nodes.find((node) => node.row.name === 'web-bundle').children.map((node) => node.row.name), ['child'])
+  assert.deepEqual(nodes.find((node) => node.row.name === 'wrong-bundle').children, [])
+  assert.deepEqual(bundleUpdateTargets(parent, nodes.find((node) => node.row.name === 'web-bundle').children), [
+    { name: 'child', profiles: ['web'] },
+  ])
+
+  const ownedChild = nodes.find((node) => node.row.name === 'web-bundle').children[0]
+  assert.deepEqual(bundleUpdateTargets(parent, [ownedChild]), [{ name: 'child', profiles: ['web'] }])
+  assert.deepEqual(globalUpdateTargets([
+    { name: 'current', canAutoUpdate: true, updateAvailable: false, updatableProfiles: ['web'] },
+    { name: 'stale', canAutoUpdate: true, updateAvailable: true, updatableProfiles: ['web'] },
+  ]), [{ name: 'stale', profiles: ['web'] }])
+})
+
+test('one child can appear under selected cross-profile parents with scoped bundle targets', () => {
+  const { groupMountedRows, bundleUpdateTargets } = loadBundle().__test
+  const webParent = {
+    name: 'web-bundle', canAutoUpdate: false, updateAvailable: false,
+    mounts: [{ profile: 'web', parent: 'web-bundle', child: 'shared-child' }],
+  }
+  const desktopParent = {
+    name: 'desktop-bundle', canAutoUpdate: false, updateAvailable: false,
+    mounts: [{ profile: 'desktop', parent: 'desktop-bundle', child: 'shared-child' }],
+  }
+  const unselected = {
+    name: 'wrong-bundle', canAutoUpdate: false, updateAvailable: false,
+    mounts: [{ profile: 'web', parent: 'wrong-bundle', child: 'shared-child' }],
+  }
+  const child = {
+    name: 'shared-child', canAutoUpdate: true, updateAvailable: true, updatableProfiles: ['web', 'desktop'],
+    profiles: [{ profile: 'web', mountedBy: 'web-bundle' }, { profile: 'desktop', mountedBy: 'desktop-bundle' }],
+  }
+  const nodes = groupMountedRows([webParent, desktopParent, unselected, child])
+  const byName = new Map(nodes.map((node) => [node.row.name, node]))
+
+  assert.equal(byName.has('shared-child'), false)
+  assert.deepEqual(byName.get('web-bundle').children.map((node) => node.row.name), ['shared-child'])
+  assert.deepEqual(byName.get('desktop-bundle').children.map((node) => node.row.name), ['shared-child'])
+  assert.deepEqual(byName.get('wrong-bundle').children, [])
+  assert.deepEqual(bundleUpdateTargets(webParent, byName.get('web-bundle').children), [{ name: 'shared-child', profiles: ['web'] }])
+  assert.deepEqual(bundleUpdateTargets(desktopParent, byName.get('desktop-bundle').children), [{ name: 'shared-child', profiles: ['desktop'] }])
+})
+
+test('mounted child count exposes stale descendants for collapsed parent summaries', () => {
+  const { mountedUpdateCount, shouldShowBundleUpdate } = loadBundle().__test
+  const current = { row: { updateAvailable: false }, children: [] }
+  const stale = { row: { updateAvailable: true }, children: [current] }
+  const parent = { name: 'bundle', updateAvailable: false, canAutoUpdate: false }
+  assert.equal(mountedUpdateCount([stale]), 1)
+  assert.equal(shouldShowBundleUpdate(parent, [stale]), false)
+})
+
+test('shared mutation lock rejects a competing action until the first releases it', () => {
+  const { acquireMutation, releaseMutation, getUiState } = loadBundle().__test
+  assert.equal(acquireMutation('row'), true)
+  assert.equal(getUiState().operation, 'row')
+  assert.equal(acquireMutation('bundle'), false)
+  releaseMutation()
+  assert.equal(getUiState().operation, null)
+})
+
+test('mutation lock releases after a post-update callback rejection', async () => {
+  const { withMutationLock, getUiState, acquireMutation, releaseMutation } = loadBundle().__test
+  await assert.rejects(
+    withMutationLock('bundle', async () => { throw new Error('refresh failed') }),
+    /refresh failed/,
+  )
+  assert.equal(getUiState().operation, null)
+  assert.equal(acquireMutation('row'), true)
+  releaseMutation()
+})
+
+test('bundle action appears when the parent or a mounted child has an outdated target', () => {
+  const { shouldShowBundleUpdate } = loadBundle().__test
+  const parent = { name: 'bundle', canAutoUpdate: true, updateAvailable: true, updatableProfiles: ['web'] }
+  const child = { row: { name: 'child', canAutoUpdate: true, updateAvailable: true, updatableProfiles: ['web'] }, children: [] }
+  const currentChild = { row: { ...child.row, updateAvailable: false }, children: [] }
+  const standalone = { name: 'standalone', canAutoUpdate: true, updateAvailable: true, updatableProfiles: ['web'] }
+
+  assert.equal(shouldShowBundleUpdate(parent, [child]), true)
+  assert.equal(shouldShowBundleUpdate(parent, [currentChild]), true)
+  assert.equal(shouldShowBundleUpdate(standalone, []), false)
+})
+
+test('modal focus trap wraps Tab at both boundaries', () => {
+  const { trapModalFocus } = loadBundle().__test
+  const first = { focus: () => { first.focused = true } }
+  const last = { focus: () => { last.focused = true } }
+  const modal = { querySelectorAll: () => [first, last], focus: () => { modal.focused = true } }
+  const forward = { shiftKey: false, preventDefault: () => { forward.prevented = true } }
+  const backward = { shiftKey: true, preventDefault: () => { backward.prevented = true } }
+
+  assert.equal(trapModalFocus(modal, forward, last), true)
+  assert.equal(forward.prevented, true)
+  assert.equal(first.focused, true)
+  assert.equal(trapModalFocus(modal, backward, first), true)
+  assert.equal(backward.prevented, true)
+  assert.equal(last.focused, true)
+})
