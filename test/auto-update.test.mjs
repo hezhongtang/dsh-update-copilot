@@ -9,42 +9,7 @@
 // shape change cannot silently widen or empty the auto-run.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const root = dirname(dirname(fileURLToPath(import.meta.url)))
-
-function loadBundle() {
-  const reactStub = new Proxy({}, {
-    get(target, key) {
-      if (key === 'createElement') return () => ({})
-      if (key === 'useState') return (initial) => [initial, () => {}]
-      if (key === 'useEffect') return (effect) => { try { effect?.() } catch { /* ignore */ } return undefined }
-      if (key === 'useCallback') return (fn) => fn
-      if (key === 'useRef') return () => ({ current: null })
-      if (key === 'useSyncExternalStore') return (_subscribe, getSnapshot) => getSnapshot()
-      return undefined
-    },
-  })
-  let exportsObj = null
-  const windowStub = {
-    __ModuleLoader__: {
-      load({ factory }) {
-        const requireStub = (spec) => {
-          if (spec === 'react') return reactStub
-          throw new Error(`test: unexpected require(${spec})`)
-        }
-        exportsObj = factory(requireStub)
-      },
-    },
-  }
-  const code = readFileSync(join(root, 'client', 'client.js'), 'utf8')
-  // The bundle self-invokes window.__ModuleLoader__.load(...) on evaluation.
-  new Function('window', code)(windowStub)
-  assert.ok(exportsObj !== null, 'bundle did not export the plugin')
-  return exportsObj
-}
+import { loadBundle } from './bundle-loader.mjs'
 
 const row = (name, updateAvailable, canAutoUpdate) => ({ name, updateAvailable, canAutoUpdate })
 

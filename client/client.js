@@ -856,6 +856,27 @@ function liveRunningOf(live) {
   return live !== null && typeof live === 'object' && live.running === true
 }
 
+/** True when the live slot says this row's package is executing right now. */
+function liveMatchesRow(live, name) {
+  return liveRunningOf(live) && live?.current?.name === name
+}
+
+/**
+ * Normalize the slot's latest progress event into the row's {percent, phase}
+ * rendering shape. The server filters raw `line` events out of the slot, so
+ * only progress / retry / phase shapes arrive; anything unknown renders as an
+ * indeterminate bar with no label.
+ */
+function liveRowProgress(live) {
+  if (!liveRunningOf(live)) return null
+  const p = live.progress
+  if (p === null || p === undefined || typeof p !== 'object') return { percent: null, phase: null }
+  if (p.type === 'progress') return { percent: typeof p.percent === 'number' ? p.percent : null, phase: p.phase ?? null }
+  if (p.type === 'retry') return { percent: null, phase: 'retry' }
+  if (p.type === 'phase') return { percent: null, phase: p.phase ?? null }
+  return { percent: null, phase: null }
+}
+
 /** Minimum gap between forced external-completion rescans (upstream IO). */
 const LIVE_RESCAN_THROTTLE_MS = 30000
 let lastLiveRescanAt = 0
@@ -1329,6 +1350,23 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
   // would answer the click with "another update is already running".
   const live = useLive()
   const liveRunning = liveRunningOf(live)
+  // This row's package is being updated by someone else (popup, bulk, agent
+  // tool, another tab): mirror the live slot into the row so every seat shows
+  // the same progress. The row's own SSE stream stays authoritative while it
+  // runs (busy); the 2s-poll mirror only fills the gap for external runs.
+  const liveForRow = !busy && liveMatchesRow(live, row.name)
+  const shownProgress = busy ? progress : (liveForRow ? liveRowProgress(live) : null)
+  // Edge-triggered stale-result cleanup: an old failure line must not sit
+  // next to a fresh "updating" banner when a new round for this package
+  // starts elsewhere. The edge + !busy guard keeps the row's own just-written
+  // result safe: while its own run executes the ref is already true, so the
+  // lagging poll snapshot arriving right after a failure cannot re-arm it.
+  const wasLiveForRow = useRef(false)
+  useEffect(() => {
+    const isFor = liveMatchesRow(live, row.name)
+    if (isFor && !wasLiveForRow.current && !busy) setResult(null)
+    wasLiveForRow.current = isFor
+  }, [live, busy, row.name])
 
   const canUpdate = row.canAutoUpdate === true
   const switchProfile = row.profiles.length === 1 && row.profiles[0].canSwitch === true
@@ -1420,7 +1458,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
       h('span', { className: 'duc-actions' },
         row.updateAvailable ? h('button', { className: 'duc-btn', onClick: () => setOpen(!open), disabled: busy },
           open ? t('hideBrief') : t('brief')) : null,
-        canUpdate ? (busy
+        canUpdate ? (busy || liveForRow
           ? h('button', { className: 'duc-btn', disabled: true }, t('updating'))
           : h('button', { className: 'duc-btn primary', onClick: runUpdate, disabled: actionsDisabled || liveRunning, title: liveRunning ? t('liveBusy') : undefined }, t('update'))) : null,
         canUpdateBundle ? h('button', {
@@ -1436,16 +1474,18 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
               onBlur: () => setSwitchConfirming(false),
               disabled: actionsDisabled,
             }, switchConfirming ? t('confirmSwitchRemote') : t('switchRemote'))) : null)),
-    progress !== null ? h('div', { className: 'duc-progress-wrap' },
+    shownProgress !== null ? h('div', { className: 'duc-progress-wrap' },
       h('div', { className: 'duc-progress' },
         h('div', {
-          className: progress.percent === null
+          className: shownProgress.percent === null
             ? 'duc-progress-fill duc-indet'
             : 'duc-progress-fill',
-          style: progress.percent === null ? undefined : { width: `${progress.percent}%` },
+          style: shownProgress.percent === null ? undefined : { width: `${shownProgress.percent}%` },
         })),
-      h('span', { className: 'duc-progress-label' },
-        progress.percent !== null ? `${progress.percent}%` : t('progressPhase', { phase: t(`progress_${progress.phase}`) }))) : null,
+      shownProgress.percent !== null || shownProgress.phase !== null ? h('span', { className: 'duc-progress-label' },
+        shownProgress.percent !== null
+          ? `${shownProgress.percent}%`
+          : t('progressPhase', { phase: t(`progress_${shownProgress.phase}`) })) : null) : null,
     result !== null ? h(UpdateResult, { t, result }) : null,
     open ? h(BriefPanel, { t, name: row.name }) : null,
     hasMounted && mountedOpen ? h('div', { className: 'duc-mounted-group' },
@@ -2088,6 +2128,8 @@ exports.__test = {
   mountedUpdateCount,
   shouldShowBundleUpdate,
   mountRelationshipInfo,
+  liveMatchesRow,
+  liveRowProgress,
   trapModalFocus,
 }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
