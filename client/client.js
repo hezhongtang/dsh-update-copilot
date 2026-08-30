@@ -8,13 +8,16 @@ var module = { exports: {} }; var exports = module.exports;
  * Three seats:
  *  - Settings section: the full update radar page (core + every profile's
  *    plugins, merged package-centrically with ownership disclosure, inline
- *    update highlights, and one-click / bulk updates.
+ *    update highlights, and one-click / bulk updates. The core card and the
+ *    plugins card fold their quiet parts: core & official bundles collapsed
+ *    by default, plugins split into "updates available" and a folded
+ *    "up to date" section.
  *  - sidebar.footer.action: a trigger beside the Settings button. Its badge
  *    hydrates once after mount and once more after startup scan completion — no
  *    ongoing background polling unless the user opts into the 30-minute
  *    periodic refresh in settings (one interval per page, this seat drives it).
- *  - shell.overlay: a modal popup with the compact radar — behind rows first,
- *    up-to-date rows folded away; same one-click updates. Opened via the
+ *  - shell.overlay: a modal popup with the compact radar — same folded layout
+ *    as the settings page; same one-click updates. Opened via the
  *    sidebar button or the `?duc=1` URL parameter (visual-test hook).
  *
  * Hand-authored CJS bundle (no build step); externals are `react` and the
@@ -1452,7 +1455,11 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
 }
 
 function CoreCard({ t, core }) {
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(NS_CORE_FOLDED) === '1')
+  // Folded by default — the core is report-only and rarely actionable. The
+  // stored flag keeps the user's explicit choice: '0' = unfolded on purpose.
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(NS_CORE_FOLDED) !== '0' } catch { return true }
+  })
   const [copied, setCopied] = useState(false)
   const coreRow = core.packages[0]
   function toggleCollapsed() {
@@ -1500,8 +1507,9 @@ function CoreCard({ t, core }) {
 
 /**
  * The single plugins card: every package merged across profiles, one row per
- * package. `plugins` is the aggregated list from the scan; `compact` folds the
- * up-to-date rows away (popup mode).
+ * package, split into two sections — "updates available" always rendered,
+ * "up to date" behind a disclosure folded by default (settings page and popup
+ * share this layout). `plugins` is the aggregated list from the scan.
  */
 function partitionPluginGroups(plugins) {
   const mounted = groupMountedRows(plugins)
@@ -1572,14 +1580,13 @@ function nodeIsBehind(node) {
   return node.row.updateAvailable === true || node.children.some(nodeIsBehind)
 }
 
-function PluginListCard({ t, plugins, categories, onUpdated, compact = false, bulkRunning = false, bundleRunning = false, refreshing = false, onRunBundle }) {
+function PluginListCard({ t, plugins, categories, onUpdated, bulkRunning = false, bundleRunning = false, refreshing = false, onRunBundle }) {
   const [showOk, setShowOk] = useState(false)
   const groups = partitionPluginGroups(plugins)
   const renderGroups = (items) => items.map(({ parent, mountedChildren }) => h(PluginRow, {
     t, row: parent, categories, key: parent.name, onUpdated,
     bulkRunning: bulkRunning || bundleRunning, refreshing, mountedChildren, onRunBundle,
   }))
-  const rows = groupMountedRows(plugins).map((node) => ({ parent: node.row, mountedChildren: node.children }))
 
   return h('div', { className: 'duc-card' },
     h('div', { className: 'duc-card-title' },
@@ -1587,26 +1594,20 @@ function PluginListCard({ t, plugins, categories, onUpdated, compact = false, bu
       h('span', { className: 'duc-note' }, t('scanSummary', { p: plugins.length, b: groups.behind.length }))),
     plugins.length === 0
       ? h('div', { className: 'duc-note' }, t('noPlugins'))
-      : compact
-        ? h(React.Fragment, null,
-            h('div', { className: 'duc-section-label' }, t('updatesAvailableSection')),
-            renderGroups(groups.behind),
-            groups.current.length > 0 ? h('button', {
-              type: 'button',
-              className: 'duc-collapse-head',
-              onClick: () => setShowOk(!showOk),
-              'aria-expanded': showOk,
-            },
-              h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
-                h(Chevron, { open: showOk })),
-              h('span', { className: 'duc-collapse-title' }, t('upToDateSection')),
-              h('span', { className: 'duc-note' }, t('upToDateFold', { n: groups.current.length }))) : null,
-            showOk ? h('div', { className: 'duc-section-body' }, renderGroups(groups.current)) : null)
-        : rows.map(({ parent, mountedChildren }) => h(PluginRow, {
-            t, row: parent, categories, key: parent.name, onUpdated,
-            bulkRunning: bulkRunning || bundleRunning, refreshing, mountedChildren, onRunBundle,
-          })),
-    )
+      : h(React.Fragment, null,
+          groups.behind.length > 0 ? h('div', { className: 'duc-section-label' }, t('updatesAvailableSection')) : null,
+          renderGroups(groups.behind),
+          groups.current.length > 0 ? h('button', {
+            type: 'button',
+            className: 'duc-collapse-head',
+            onClick: () => setShowOk(!showOk),
+            'aria-expanded': showOk,
+          },
+            h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
+              h(Chevron, { open: showOk })),
+            h('span', { className: 'duc-collapse-title' }, t('upToDateSection')),
+            h('span', { className: 'duc-note' }, t('upToDateFold', { n: groups.current.length }))) : null,
+          showOk ? h('div', { className: 'duc-section-body' }, renderGroups(groups.current)) : null))
 }
 
 /**
@@ -1989,7 +1990,7 @@ function PopupBody({ t, autoRun = false }) {
     status !== null ? h(CoreCard, { t, core: status.core }) : null,
     status !== null
       ? h(PluginListCard, {
-          t, plugins: status.plugins, categories: status.categories, compact: true, onUpdated: notifyUpdated,
+          t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated,
           bulkRunning: bulk.running, bundleRunning: bundle.running, refreshing: busy || ui.operation !== null, onRunBundle,
         })
       : null)
