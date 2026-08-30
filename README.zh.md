@@ -8,7 +8,7 @@
 **[DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) 的更新助手：追踪 dsh 本体、官方 bundle 和所有已装插件——跨全部 profile 按包合并展示，对符合独立更新条件的安装一键更新。**
 
 <p align="center">
-  <img src="assets/popup.png" width="480" alt="更新助手弹窗：核心包列表、落后项优先的插件行、已最新项折叠。" />
+  <img src="assets/popup.png" width="480" alt="更新助手弹窗：「DSH 本体与官方 bundle」卡片默认收起，插件跨 profile 合并进「可更新」分组（行内一键更新），「已最新」分组折叠。" />
 </p>
 
 [English](README.md) | 中文
