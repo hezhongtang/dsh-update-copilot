@@ -82,6 +82,8 @@ const zh = {
   brief: '更新要点',
   hideBrief: '收起',
   update: '更新',
+  queued: '待更新',
+  queuedHint: '更新正在进行，此项排队等待；当前项完成后自动开始',
   updateAll: '一键更新全部',
   updatingAll: '正在更新 {i}/{n}：{name}',
   updatedAll: '✓ 全部更新完成',
@@ -226,6 +228,8 @@ const en = {
   brief: 'Update highlights',
   hideBrief: 'Hide',
   update: 'Update',
+  queued: 'Queued',
+  queuedHint: 'An update is running — this item is queued and starts automatically when it finishes',
   updateAll: 'Update all',
   updatingAll: 'Updating {i}/{n}: {name}',
   updatedAll: '✓ All updates finished',
@@ -877,6 +881,64 @@ function liveRowProgress(live) {
   return { percent: null, phase: null }
 }
 
+// ---------------------------------------------------------------------------
+// Shared bulk-queue state, cross-seat on one page.
+//
+// The sequential "update all" / "update bundle" runners know their own queue
+// and current position. Publishing it module-level (not per-seat) means the
+// popup and the settings page — two seats on the same page — both render
+// queued rows as "pending" even when only one seat started the run, and the
+// info survives the starting seat unmounting (e.g. closing the popup
+// mid-run). The server never sees the queue (every update is its own
+// request), so another browser tab — and agent-tool updates, which have no
+// queue at all — fall back to the existing disabled-button + live-banner
+// view instead of pretending to know a queue.
+// ---------------------------------------------------------------------------
+
+let bulkQueueState = { running: false, index: 0, total: 0, name: null, queue: [] }
+const bulkQueueSubs = new Set()
+
+function publishBulkQueue(state) {
+  bulkQueueState = state
+  for (const notify of bulkQueueSubs) notify()
+}
+
+function subscribeBulkQueue(notify) {
+  bulkQueueSubs.add(notify)
+  return () => bulkQueueSubs.delete(notify)
+}
+
+function useBulkQueue() {
+  // getServerSnapshot = null: nothing ever ran server-side, render idle.
+  return useSyncExternalStore(subscribeBulkQueue, () => bulkQueueState, () => null)
+}
+
+/**
+ * True when `name` is still waiting in the running sequential pass — queued
+ * behind the currently executing item, not yet attempted. Such rows render a
+ * disabled "待更新 / Queued" button instead of a plain disabled "Update", so
+ * a pass reads as one queue: the running row shows live progress, the rest
+ * say "pending, starts right after". Position-aware on purpose: rows already
+ * attempted earlier in this pass (pos < index) keep the regular disabled
+ * button — the scan has not refreshed mid-pass, so a stale "pending" would
+ * lie about an already-updated package.
+ */
+function rowQueuedInBulk(bulk, name) {
+  if (bulk === null || bulk === undefined || typeof bulk !== 'object') return false
+  if (bulk.running !== true || !Array.isArray(bulk.queue)) return false
+  const pos = bulk.queue.indexOf(name)
+  if (pos === -1) return false
+  // The executing row is owned by the live mirror ("更新中…" + progress), not
+  // by the queue label.
+  if (typeof bulk.name === 'string' && bulk.name !== '' && name === bulk.name) return false
+  const index = typeof bulk.index === 'number' && Number.isFinite(bulk.index) ? bulk.index : 0
+  return pos >= index
+}
+
+// ---------------------------------------------------------------------------
+// External-completion rescans.
+// ---------------------------------------------------------------------------
+
 /** Minimum gap between forced external-completion rescans (upstream IO). */
 const LIVE_RESCAN_THROTTLE_MS = 30000
 let lastLiveRescanAt = 0
@@ -1350,6 +1412,17 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
   // would answer the click with "another update is already running".
   const live = useLive()
   const liveRunning = liveRunningOf(live)
+  // Sequential-pass queue (shared cross-seat): while the running pass still
+  // has this package ahead of it, the row reads "待更新 / Queued" instead of a
+  // plain disabled Update, so a bulk pass shows one queue at a glance. The
+  // pass's own current item also flips to "更新中…" right away — the 2s live
+  // poll is the server truth, but it lags the pass by a poll cycle, during
+  // which a stark disabled "Update" would otherwise sit on the running row.
+  const bulkQueue = useBulkQueue()
+  const queuedInBulk = rowQueuedInBulk(bulkQueue, row.name)
+  const bulkCurrentRow = bulkQueue !== null && typeof bulkQueue === 'object'
+    && bulkQueue.running === true
+    && typeof bulkQueue.name === 'string' && bulkQueue.name !== '' && bulkQueue.name === row.name
   // This row's package is being updated by someone else (popup, bulk, agent
   // tool, another tab): mirror the live slot into the row so every seat shows
   // the same progress. The row's own SSE stream stays authoritative while it
@@ -1458,9 +1531,11 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
       h('span', { className: 'duc-actions' },
         row.updateAvailable ? h('button', { className: 'duc-btn', onClick: () => setOpen(!open), disabled: busy },
           open ? t('hideBrief') : t('brief')) : null,
-        canUpdate ? (busy || liveForRow
+        canUpdate ? (busy || liveForRow || bulkCurrentRow
           ? h('button', { className: 'duc-btn', disabled: true }, t('updating'))
-          : h('button', { className: 'duc-btn primary', onClick: runUpdate, disabled: actionsDisabled || liveRunning, title: liveRunning ? t('liveBusy') : undefined }, t('update'))) : null,
+          : queuedInBulk
+            ? h('button', { className: 'duc-btn', disabled: true, title: t('queuedHint') }, t('queued'))
+            : h('button', { className: 'duc-btn primary', onClick: runUpdate, disabled: actionsDisabled || liveRunning, title: liveRunning ? t('liveBusy') : undefined }, t('update'))) : null,
         canUpdateBundle ? h('button', {
           className: 'duc-btn',
           onClick: () => onRunBundle?.(row, mountedChildren),
@@ -1665,11 +1740,15 @@ function useBulkUpdate() {
     if (targets.length === 0) return
     return withMutationLock('all', async () => {
       setBulkResult(null)
-      setBulk({ running: true, index: 0, total: targets.length, name: null })
+      const queue = targets.map((target) => target.name)
+      const snapshot = (index, name) => ({ running: true, index, total: targets.length, name, queue })
+      setBulk(snapshot(0, null))
+      publishBulkQueue(snapshot(0, null))
       const results = []
       try {
         for (let i = 0; i < targets.length; i += 1) {
-          setBulk({ running: true, index: i + 1, total: targets.length, name: targets[i].name })
+          setBulk(snapshot(i + 1, targets[i].name))
+          publishBulkQueue(snapshot(i + 1, targets[i].name))
           try {
             results.push({ name: targets[i].name, outcome: await streamUpdate(targets[i].name, () => {}, undefined, undefined, targets[i].profiles) })
           } catch (e) {
@@ -1682,7 +1761,9 @@ function useBulkUpdate() {
         if (changed) await onUpdated?.({ requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
         return results
       } finally {
-        setBulk({ running: false, index: 0, total: 0, name: null })
+        const idle = { running: false, index: 0, total: 0, name: null, queue: [] }
+        setBulk(idle)
+        publishBulkQueue(idle)
       }
     })
   }, [])
@@ -1724,12 +1805,16 @@ function useBundleUpdate() {
     if (targets.length === 0) return undefined
     return withMutationLock('bundle', async () => {
       setBundleResult(null)
-      setBundle({ running: true, index: 0, total: targets.length, name: null })
+      const queue = targets.map((target) => target.name)
+      const snapshot = (index, name) => ({ running: true, index, total: targets.length, name, queue })
+      setBundle(snapshot(0, null))
+      publishBulkQueue(snapshot(0, null))
       const results = []
       try {
         for (let i = 0; i < targets.length; i += 1) {
           const target = targets[i]
-          setBundle({ running: true, index: i + 1, total: targets.length, name: target.name })
+          setBundle(snapshot(i + 1, target.name))
+          publishBulkQueue(snapshot(i + 1, target.name))
           try {
             results.push({ ...target, outcome: await streamUpdate(target.name, () => {}, undefined, undefined, target.profiles) })
           } catch (e) {
@@ -1742,7 +1827,9 @@ function useBundleUpdate() {
         if (changed) await onUpdated?.({ requiresRestart: results.some((result) => result.outcome.requiresRestart === true) })
         return results
       } finally {
-        setBundle({ running: false, index: 0, total: 0, name: null })
+        const idle = { running: false, index: 0, total: 0, name: null, queue: [] }
+        setBundle(idle)
+        publishBulkQueue(idle)
       }
     })
   }, [])
@@ -2121,6 +2208,7 @@ exports.__test = {
   partitionPluginGroups,
   groupMountedRows,
   rowActionsDisabled,
+  rowQueuedInBulk,
   rowUpdateTarget,
   scopedRowUpdateTarget,
   bundleUpdateTargets,
