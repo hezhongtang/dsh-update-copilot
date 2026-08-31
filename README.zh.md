@@ -29,6 +29,7 @@ DSH 迭代很快，插件生态同样如此。每个 profile 通过 pnpm spec �
 | 🤖 **Agent 工具** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update`——对 Agent 说一句「有没有更新」，得到有数据支撑的回答；扫描按包合并（一个包一行），自动推断的挂载关系只用于展示；官方包只报告，每个直接依赖仍按自身更新策略处理。`profile` 参数在 brief/update 上可选：不传时 brief 覆盖所有装有该包的合格 profile，update 也只在那些合格 profile 中执行 |
 | 🖥 **Web 界面** | 设置旁的侧栏入口（徽章在挂载时补齐、启动扫描后刷新；可在设置中关闭徽章，还你一个安静侧栏）打开紧凑雷达弹窗，弹窗与完整页面共用同一折叠布局——「DSH 本体与官方 bundle」卡片默认收起，插件拆成「可更新」「已最新」两组（已最新默认折叠、点击展开），自动推断的挂载关系始终跟随父行。完整页面在 设置 → 更新助手，其中提供可选的**「每 30 分钟自动刷新」**开关（默认关闭——上游只在启动时和你的操作时被查询；开启后每 30 分钟在后台强制刷新一次，徽章与打开的雷达视图自动跟进）。插件跨 profile 合并成一行（每个已在的 profile 的当前 → 最新版本内联列出），挂载的包可在父行下展开披露，同时保留独立归属和更新操作——子项「更新」只更新子项，父项普通「更新」只更新父项，「更新 bundle」只处理过期且合格的目标（父项过期先更新父项，再按每条关系的 profile 范围更新过期的挂载子项）。点一次「更新」只在该包明确列出的合格 profile 中执行，工具栏「一键更新全部」按序跑完所有合格的落后包（在 设置 → 更新助手 勾选「点击按钮时自动更新」后，点侧栏按钮一发现有落后插件就自动开始这一轮，dsh 本体仍只报告不执行）。所有变更操作共用一个 UI 操作锁；更新或刷新状态未结束时禁止刷新。更新过程通过 SSE 实时推送进度（解析依赖 / 下载中 / 重试中 / 暂存 / 拉取 / 恢复阶段），直接渲染成每行进度条；**更新从不静默**——无论这轮更新由谁发起（自动更新、Agent 工具、另一个标签页），运行期间侧栏按钮的徽章会变成跳动的「更新中」圆点，弹窗和完整页面常驻「正在更新：包名（profile）…」横幅（含当前阶段 / 百分比），所有更新按钮同步禁用，更新一结束列表自动刷新；无论这轮更新由谁发起，雷达里匹配的那一行都会内联同一根实时进度条（发起行走 SSE 流，其余座位经 2 秒轮询镜像），新一轮更新开始时该行残留的上一次结果自动清除——后台静默更新不会再和前台点击撞出「更新中」报错 |
 | 🛡 **更新护栏** | 同源 POST + 显式 `confirm`、严格目标 allowlist、单并发锁、5 分钟超时；npm/github 通道只走官方 `dsh plugin` CLI，`link:` 本地目录走 git pull（自动暂存 → 拉取 → 恢复），冲突一律交还手动处理；`file:` 与官方 `@deepseek-ai/*` 包仍拒绝 |
+| 🧯 **Host 导出检查** | 扫描第三方插件对 `@deepseek-ai/*` 的 named import，对照当前（以及本体有新版本时的目标）DSH host 包实际导出。peer 范围拦不住「范围合法、导出没了」——这种错误会在启动时整棵插件树挂掉。雷达本体卡片和插件行给出提醒，并附带可复制的 `cordis.patch.yml` 禁用片段与 `dsh plugin remove` 命令。DSH 已经起不来时，不经过 `dsh web`，直接跑 `node …/dsh-update-copilot/lib/cli.js` |
 | 🌐 **完整双语** | 所有面向用户的文案——面板、弹窗、徽章、更新要点、建议、更新错误——跟随界面语言（中/英）；Agent 工具路径保留稳定英文标识 |
 
 ## 安装
@@ -85,6 +86,18 @@ npm 通道刻意不信任 `latest` dist-tag：monorepo 子包的这个 tag 常�
 
 `link:` 目录还可以**切换到远端源**：copilot 把依赖 spec 改写为 npm 上最新发布的版本（优先查 registry），包未发布到 npm 时改写为 `github:owner/repo#<origin HEAD>`。本地链接断开，此后更新走常规 npm/github 通道。切换是破坏性操作，永远需要显式确认，绝不并入默认 pull 路径。
 
+## DSH 起不来时
+
+第三方插件若 `import { 某个已删除的名字 } from '@deepseek-ai/…'`，loader 会让整棵 plugin tree 失败，更新助手的 Web 界面也出不来。这时在任意能跑 Node 的 shell 里：
+
+```sh
+node ~/.dsh/profiles/web/node_modules/dsh-update-copilot/lib/cli.js
+# 本地 link 安装：
+node /path/to/dsh-update-copilot/lib/cli.js
+```
+
+当前 host 已不兼容时退出码为 1，并打印禁用 / 卸载命令；仅「升到某版本之后可能不兼容」时退出码为 0。检查不启动 profile。
+
 ## 安全性
 
 - 唯一的变更路由是 `POST /dsh-update-copilot/update`：强制同源且校验实际传输协议，必须显式 `confirm: true`，不信任转发协议请求头。TLS 终止代理可设置其公开 HTTP(S) origin 至 `DSH_UPDATE_COPILOT_PUBLIC_ORIGIN`；请求必须精确匹配，配置无效时拒绝所有请求。
@@ -98,6 +111,7 @@ npm 通道刻意不信任 `latest` dist-tag：monorepo 子包的这个 tag 常�
 - `link:` 切换到远端源会断开本地链接，且不提供自动切回（需手改 spec）；npm 优先策略安装的是 registry 版本，可能与本地开发中的 checkout 不一致。
 - GitHub API 未认证时限流 60 次/小时——更新要点会优雅降级为基础版本列表。
 - 裸 `git+https://` spec 只报告、不提供比较通道。
+- Host 导出检查是静态 named import：动态 `import()`、运行时才碰到的 API、以及 `import * as ns` 不会标出来。官方 `@deepseek-ai/*` 包不扫。目标版本的导出通过 `npm pack` 取，网络失败时降级为只报当前 host。
 
 ## 参与贡献
 

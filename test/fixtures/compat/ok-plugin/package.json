@@ -1,0 +1,5 @@
+{
+  "name": "harmless-plugin",
+  "type": "module",
+  "exports": { ".": "./lib/index.js" }
+}

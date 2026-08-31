@@ -29,6 +29,7 @@ This plugin takes the middle path: **detect everything, summarize what changed, 
 | 🤖 **Agent tools** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_update` — ask your agent *"any updates?"* and get an honest, data-backed answer. Scans are package-centric (one row per package, merged across profiles); inferred mount relationships are presentation-only, while official packages are report-only and each direct dependency keeps its own update policy. `profile` is optional on brief/update: without it, a brief covers every eligible profile that has the package, and an update runs only across those eligible profiles |
 | 🖥 **Web surfaces** | A sidebar trigger beside Settings (its badge hydrates on mount and refreshes after the startup scan; the badge can be turned off in settings for a quiet sidebar) opens a compact popup; popup and full page share one folded layout — the **DSH core & official bundles** card starts collapsed, and plugins split into an "Updates available" section plus a folded "Up to date" section (expand on click), inferred mount relationships staying with their parent. The full page lives on in Settings → Update Copilot, which also offers an opt-in **Refresh every 30 minutes** toggle (off by default — upstreams are only queried at startup and on your actions; when enabled, a forced background refresh runs every 30 minutes and the badge and open radar views follow along). Plugins are merged across profiles into one row per package, each installed profile's current → latest listed inline; mounted packages expand beneath their parent for disclosure while keeping independent ownership and update actions — a child **Update** targets only that child, a parent **Update** only the parent, and **Update bundle** updates only outdated eligible targets (outdated parent first, then outdated mounted children within each relationship's profile scope). One click on **Update** updates the package across its explicit eligible profiles, and a toolbar **Update all** runs every eligible outdated package in sequence (tick **Auto-update on button click** in Settings → Update Copilot and a click on the sidebar trigger starts that same pass automatically whenever outdated plugins are found; the dsh core stays report-only). All mutation actions share one UI operation lock; refresh is disabled until updates and refresh state settle. Updates stream live progress over SSE (resolving / downloading / retrying / stash / pull / restore phases) straight into a per-row progress bar. **Updates are never silent** — whoever started one (the auto-run, the agent tools, another tab), the sidebar badge turns into a pulsing *updating* dot and the popup/panel keep a live "Updating: \<package>" banner across every seat, with update buttons disabled while one is running; whoever started the update, the matching row also renders the same live progress bar inline (the initiating row via its own SSE stream, every other seat mirrored from the 2-second status poll), and a new round for that package clears the row's stale previous result — a background update never collides with a foreground click into the confusing "another update is already running" error |
 | 🛡 **Update guardrails** | Same-origin POST + explicit `confirm`, strict target allowlist, single-flight lock, 5-minute timeout; npm/github specs run only through the official `dsh plugin` CLI, `link:` checkouts update via git pull in their own directory (auto-stash → pull → restore; conflicts are always handed back for manual handling), while `file:` installs and official `@deepseek-ai/*` packages remain refused |
+| 🧯 **Host export check** | Scans third-party plugins' named imports of `@deepseek-ai/*` against the current DSH host packages (and the target version when the core is behind). Peer ranges miss "range still matches, export is gone" — that class of error fails the whole plugin tree at boot. The core card and plugin rows surface the finding with a copy-pasteable `cordis.patch.yml` disable snippet and `dsh plugin remove` command. When DSH itself will not start, run `node …/dsh-update-copilot/lib/cli.js` (it does not boot a profile). |
 | 🌐 **Fully bilingual** | Every user-facing string — panel, popup, badges, update highlights, recommendations, update errors — follows the UI language (zh/en); the agent tool path keeps stable English identifiers |
 
 ## Install
@@ -85,6 +86,18 @@ Updates execute through two vetted paths, never a raw shell string: npm/github s
 
 A `link:` checkout can also be **switched to a remote source**: the copilot replaces the dependency spec with the newest published npm version (npm registry first), or with `github:owner/repo#<origin HEAD>` when the package has no npm release. The local link breaks and future updates follow the normal npm/github channel. Switching is destructive, so it always requires explicit confirmation and is never part of the default pull path.
 
+## When DSH will not start
+
+If a third-party plugin `import { aRemovedName } from '@deepseek-ai/…'`, the loader fails the whole plugin tree and the copilot UI never mounts. From any Node shell:
+
+```sh
+node ~/.dsh/profiles/web/node_modules/dsh-update-copilot/lib/cli.js
+# linked install:
+node /path/to/dsh-update-copilot/lib/cli.js
+```
+
+Exit 1 when the current host is already incompatible (prints disable / uninstall commands); exit 0 when the only findings are about a *target* DSH version. The check does not boot a profile.
+
 ## Security
 
 - The only mutating route is `POST /dsh-update-copilot/update`: same-origin and same-transport-scheme checks are enforced, with `confirm: true` required; forwarded scheme headers are not trusted. TLS-terminating proxies may set `DSH_UPDATE_COPILOT_PUBLIC_ORIGIN` to their public HTTP(S) origin; requests must match it exactly, and an invalid value fails closed.
@@ -98,6 +111,7 @@ A `link:` checkout can also be **switched to a remote source**: the copilot repl
 - Switching a `link:` to a remote source breaks the local link and there is no automatic switch back (the spec must be edited by hand). The npm-first strategy installs the registry version, which may differ from your local development checkout.
 - Unauthenticated GitHub API is rate-limited (60 req/h) — briefs degrade gracefully to version lists.
 - Raw `git+https://` specs are reported as-is without a comparison channel.
+- The host export check is static named imports: dynamic `import()`, APIs only reached at runtime, and `import * as ns` are not flagged. Official `@deepseek-ai/*` packages are skipped. Target-version exports are loaded via `npm pack`; a network failure degrades to current-host findings only.
 
 ## Contributing
 

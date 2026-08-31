@@ -182,6 +182,14 @@ const zh = {
   liveUpdating: '正在更新：{name}',
   liveUpdatingProfile: '正在更新：{name}（{profile}）',
   liveBusy: '有更新正在进行，请稍候',
+  compatChip: '{n} 个插件可能不兼容',
+  compatBadge: '可能不兼容',
+  compatCurrent: '当前 DSH {v} 已缺这些导出，下次启动可能整棵插件树挂掉',
+  compatTarget: '升到 DSH {v} 后，这些插件可能无法加载',
+  compatMissing: '{file} 从 {pkg} 导入 {names}，host 未导出',
+  compatDisable: '临时禁用（追加到该 profile 的 cordis.patch.yml）',
+  compatRemove: '或卸载',
+  compatHostMissing: '目标 host 包未找到',
 }
 
 const en = {
@@ -328,6 +336,14 @@ const en = {
   liveUpdating: 'Updating: {name}',
   liveUpdatingProfile: 'Updating: {name} ({profile})',
   liveBusy: 'An update is running — please wait',
+  compatChip: '{n} plugin(s) may not load',
+  compatBadge: 'may not load',
+  compatCurrent: 'Current DSH {v} no longer exports names these plugins import; the next boot may fail the whole plugin tree',
+  compatTarget: 'After upgrading to DSH {v}, these plugins may fail to load',
+  compatMissing: '{file} imports {names} from {pkg}, which the host does not export',
+  compatDisable: 'Temporarily disable (append to that profile\'s cordis.patch.yml)',
+  compatRemove: 'or uninstall',
+  compatHostMissing: 'target host package not found',
 }
 
 const DUC_STYLES_ID = 'duc-styles'
@@ -398,6 +414,9 @@ function injectStyles() {
     '.duc-chip.duc-repolink:hover{opacity:1;border-color:rgba(127,127,127,.9)}',
     '.duc-cmd{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;border:1px dashed rgba(127,127,127,.4);border-radius:6px;padding:6px 8px;word-break:break-all}',
     '.duc-banner{border:1px solid rgba(80,140,255,.45);background:rgba(80,140,255,.08);border-radius:8px;padding:8px 12px;font-size:12.5px}',
+    '.duc-banner.warn{border-color:rgba(220,80,80,.45);background:rgba(220,80,80,.08)}',
+    '.duc-compat{display:flex;flex-direction:column;gap:6px;padding:6px 0 2px}',
+    '.duc-compat .duc-cmd{margin-top:4px}',
     // live "update in progress" banner — pulsing dot beside the text, same
     // banner family as the restart hint so the two states read as siblings
     '.duc-banner.live{display:flex;align-items:center;gap:8px;border-color:rgba(80,140,255,.55);background:rgba(80,140,255,.12)}',
@@ -783,6 +802,21 @@ function autoTargetsOf(plugins) {
   if (!Array.isArray(plugins)) return []
   return plugins.filter((p) => p !== null && typeof p === 'object'
     && p.updateAvailable === true && p.canAutoUpdate === true)
+}
+
+function compatSummary(compat) {
+  if (compat === null || typeof compat !== 'object') return null
+  const current = Array.isArray(compat.current?.findings) ? compat.current.findings.length : 0
+  const target = Array.isArray(compat.target?.findings) ? compat.target.findings.length : 0
+  if (current === 0 && target === 0) return null
+  const names = new Set()
+  for (const finding of compat.current?.findings ?? []) names.add(finding.plugin)
+  for (const finding of compat.target?.findings ?? []) names.add(finding.plugin)
+  return { current, target, plugins: [...names].sort() }
+}
+
+function pluginHasCompat(row) {
+  return row !== null && typeof row === 'object' && Array.isArray(row.compat) && row.compat.length > 0
 }
 
 function subscribeUi(notify) {
@@ -1523,6 +1557,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
           : `${p.profile}: ${shortVer(p.current)}`))),
       h('span', { className: `duc-badge ${row.updateAvailable ? 'behind' : 'ok'}` },
         row.updateAvailable ? t('behind') : t('upToDate')),
+      pluginHasCompat(row) ? h('span', { className: 'duc-badge high' }, t('compatBadge')) : null,
       !row.updateAvailable && mountedBehind > 0 ? h('span', { className: 'duc-note' },
         t('mountedUpdates', { n: mountedBehind })) : null,
       mountInfo.mounts.length > 0 ? h('span', { className: 'duc-note' },
@@ -1562,6 +1597,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
           ? `${shownProgress.percent}%`
           : t('progressPhase', { phase: t(`progress_${shownProgress.phase}`) })) : null) : null,
     result !== null ? h(UpdateResult, { t, result }) : null,
+    pluginHasCompat(row) ? h(CompatDetails, { t, findings: row.compat }) : null,
     open ? h(BriefPanel, { t, name: row.name }) : null,
     hasMounted && mountedOpen ? h('div', { className: 'duc-mounted-group' },
       mountedChildren.map((child) => h(PluginRow, {
@@ -1571,7 +1607,25 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
     )
 }
 
-function CoreCard({ t, core }) {
+function CompatDetails({ t, findings }) {
+  if (!Array.isArray(findings) || findings.length === 0) return null
+  return h('div', { className: 'duc-compat' },
+    findings.map((finding, index) => h('div', { key: `${finding.plugin}:${finding.file}:${index}` },
+      h('div', { className: 'duc-note' },
+        t('compatMissing', {
+          file: finding.file ?? '',
+          pkg: finding.specifier ?? '',
+          names: Array.isArray(finding.missing) ? finding.missing.join(', ') : '',
+        }),
+        finding.hostMissing === true ? ` · ${t('compatHostMissing')}` : ''),
+      finding.disablePatch ? h('div', { className: 'duc-note' }, t('compatDisable')) : null,
+      finding.disablePatch ? h('pre', { className: 'duc-cmd' }, finding.disablePatch) : null,
+      Array.isArray(finding.removeCommands) && finding.removeCommands.length > 0
+        ? h('div', { className: 'duc-note' }, t('compatRemove')) : null,
+      ...(Array.isArray(finding.removeCommands) ? finding.removeCommands.map((cmd) => h('code', { className: 'duc-cmd', key: cmd }, cmd)) : []))))
+}
+
+function CoreCard({ t, core, compat }) {
   // Folded by default — the core is report-only and rarely actionable. The
   // stored flag keeps the user's explicit choice: '0' = unfolded on purpose.
   const [collapsed, setCollapsed] = useState(() => {
@@ -1579,6 +1633,7 @@ function CoreCard({ t, core }) {
   })
   const [copied, setCopied] = useState(false)
   const coreRow = core.packages[0]
+  const summary = compatSummary(compat)
   function toggleCollapsed() {
     const next = !collapsed
     setCollapsed(next)
@@ -1596,6 +1651,7 @@ function CoreCard({ t, core }) {
       h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
         h(Chevron, { open: !collapsed })),
       h('span', { className: 'duc-collapse-title' }, t('coreTitle')),
+      summary !== null ? h('span', { className: 'duc-badge high' }, t('compatChip', { n: summary.plugins.length })) : null,
       coreRow !== undefined && coreRow.updateAvailable
         ? h('span', { className: 'duc-actions' },
             h('button', {
@@ -1619,7 +1675,13 @@ function CoreCard({ t, core }) {
       h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
         h('code', { className: 'duc-cmd', style: { flex: 1 } }, core.updateCommand),
         h('button', { className: 'duc-btn', onClick: copyCmd }, copied ? t('copied') : t('copyCmd')))) : null,
-    !collapsed && coreRow !== undefined && !coreRow.updateAvailable ? h('div', { className: 'duc-note' }, t('corePolicy')) : null)
+    !collapsed && coreRow !== undefined && !coreRow.updateAvailable ? h('div', { className: 'duc-note' }, t('corePolicy')) : null,
+    !collapsed && summary !== null && summary.current > 0 ? h('div', { className: 'duc-banner warn' },
+      t('compatCurrent', { v: compat.current?.hostVersion ?? '—' }),
+      h(CompatDetails, { t, findings: compat.current.findings })) : null,
+    !collapsed && summary !== null && summary.target > 0 ? h('div', { className: 'duc-banner warn' },
+      t('compatTarget', { v: compat.target?.hostVersion ?? '—' }),
+      h(CompatDetails, { t, findings: compat.target.findings })) : null)
 }
 
 /**
@@ -1979,7 +2041,7 @@ function CopilotSection({ t }) {
       h(BadgePrefRow, { t }),
       h(AutoUpdatePrefRow, { t }),
       h(PeriodicRefreshPrefRow, { t })),
-    status !== null ? h(CoreCard, { t, core: status.core }) : null,
+    status !== null ? h(CoreCard, { t, core: status.core, compat: status.compat }) : null,
     status !== null && status.plugins.length > 0
       ? h('div', { className: 'duc-profiles-hint' }, t('profilesHint'))
       : null,
@@ -2117,7 +2179,7 @@ function PopupBody({ t, autoRun = false }) {
     needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
     error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error}`) : null,
     status === null && error === null ? h('div', { className: 'duc-note' }, t('loading')) : null,
-    status !== null ? h(CoreCard, { t, core: status.core }) : null,
+    status !== null ? h(CoreCard, { t, core: status.core, compat: status.compat }) : null,
     status !== null
       ? h(PluginListCard, {
           t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated,
@@ -2219,6 +2281,8 @@ exports.__test = {
   liveMatchesRow,
   liveRowProgress,
   trapModalFocus,
+  compatSummary,
+  pluginHasCompat,
 }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.

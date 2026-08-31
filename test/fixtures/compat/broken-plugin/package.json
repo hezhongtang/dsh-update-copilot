@@ -1,0 +1,5 @@
+{
+  "name": "@dsh-external/dsh-vision-toolkit",
+  "type": "module",
+  "exports": { ".": "./lib/index.js" }
+}
