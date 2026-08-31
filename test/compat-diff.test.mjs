@@ -26,11 +26,20 @@ test('diffHostImports: unknown host specifier is reported as a missing module, n
   const findings = diffHostImports(
     [{ plugin: 'p', file: 'lib/a.js', specifier: '@deepseek-ai/dsh-new-seam', names: ['foo'] }],
     {},
-    { against: 'target', hostVersion: '0.1.2-alpha.2' },
+    { against: 'current', hostVersion: '0.1.2-alpha.2' },
   )
   assert.equal(findings.length, 1)
   assert.deepEqual(findings[0].missing, ['foo'])
   assert.equal(findings[0].hostMissing, true)
+})
+
+test('diffHostImports: target pass skips specifiers the pack did not load', () => {
+  const findings = diffHostImports(
+    [{ plugin: 'p', file: 'lib/a.js', specifier: '@deepseek-ai/cordis', names: ['Context'] }],
+    {},
+    { against: 'target', hostVersion: '0.1.2-alpha.2' },
+  )
+  assert.deepEqual(findings, [])
 })
 
 test('diffHostImports: skips non-host specifiers', () => {

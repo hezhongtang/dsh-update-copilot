@@ -42,6 +42,25 @@ test('pluginScanTargets skips official packages and missing installs', () => {
   assert.deepEqual(targets[0].profiles, ['web'])
 })
 
+test('gatherCompatForScan: failed target pack omits the target report', async () => {
+  const profileScans = [{
+    profile: 'web',
+    plugins: [{ name: '@dsh-external/dsh-vision-toolkit', dir: brokenDir }],
+  }]
+  const core = {
+    packages: [{ name: '@deepseek-ai/dsh', current: '0.1.1-rc.2', latest: '0.1.2-alpha.2', updateAvailable: true }],
+  }
+  const report = await gatherCompatForScan({
+    profileScans,
+    core,
+    force: true,
+    locateDsh: () => dshDir,
+    loadTargetExports: async () => ({}),
+  })
+  assert.equal(report.current.findings.length, 1)
+  assert.equal(report.target, null)
+})
+
 test('gatherCompatForScan: current findings from fake dsh; target injected', async () => {
   const profileScans = [{
     profile: 'web',
@@ -53,6 +72,7 @@ test('gatherCompatForScan: current findings from fake dsh; target injected', asy
   const report = await gatherCompatForScan({
     profileScans,
     core,
+    force: true,
     locateDsh: () => dshDir,
     loadTargetExports: async () => ({
       '@deepseek-ai/dsh-settings': new Set(['SettingsConflictError']),

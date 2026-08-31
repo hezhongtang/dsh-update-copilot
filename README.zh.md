@@ -96,7 +96,7 @@ node ~/.dsh/profiles/web/node_modules/dsh-update-copilot/lib/cli.js
 node /path/to/dsh-update-copilot/lib/cli.js
 ```
 
-当前 host 已不兼容时退出码为 1，并打印禁用 / 卸载命令；仅「升到某版本之后可能不兼容」时退出码为 0。检查不启动 profile。
+只对照**当前磁盘上的 DSH**（不查 npm、不预演目标版本），因此 DSH 起不来时也能跑。已不兼容时退出码为 1，并打印禁用 / 卸载命令。
 
 ## 安全性
 
@@ -111,7 +111,7 @@ node /path/to/dsh-update-copilot/lib/cli.js
 - `link:` 切换到远端源会断开本地链接，且不提供自动切回（需手改 spec）；npm 优先策略安装的是 registry 版本，可能与本地开发中的 checkout 不一致。
 - GitHub API 未认证时限流 60 次/小时——更新要点会优雅降级为基础版本列表。
 - 裸 `git+https://` spec 只报告、不提供比较通道。
-- Host 导出检查是静态 named import：动态 `import()`、运行时才碰到的 API、以及 `import * as ns` 不会标出来。官方 `@deepseek-ai/*` 包不扫。目标版本的导出通过 `npm pack` 取，网络失败时降级为只报当前 host。
+- Host 导出检查是静态 named import：动态 `import()`、运行时才碰到的 API、以及 `import * as ns` 不会标出来。官方 `@deepseek-ai/*` 包不扫。目标版本只 pack 与 DSH 同版本线的 `@deepseek-ai/dsh-*`；pack 失败或独立版本的包（cordis、schemastery）跳过，不报假不兼容。
 
 ## 参与贡献
 

@@ -184,12 +184,13 @@ const zh = {
   liveBusy: '有更新正在进行，请稍候',
   compatChip: '{n} 个插件可能不兼容',
   compatBadge: '可能不兼容',
+  compatTargetBadge: '升级后可能不兼容',
   compatCurrent: '当前 DSH {v} 已缺这些导出，下次启动可能整棵插件树挂掉',
   compatTarget: '升到 DSH {v} 后，这些插件可能无法加载',
   compatMissing: '{file} 从 {pkg} 导入 {names}，host 未导出',
   compatDisable: '临时禁用（追加到该 profile 的 cordis.patch.yml）',
   compatRemove: '或卸载',
-  compatHostMissing: '目标 host 包未找到',
+  compatHostMissing: 'host 包未找到',
 }
 
 const en = {
@@ -338,12 +339,13 @@ const en = {
   liveBusy: 'An update is running — please wait',
   compatChip: '{n} plugin(s) may not load',
   compatBadge: 'may not load',
+  compatTargetBadge: 'may break after upgrade',
   compatCurrent: 'Current DSH {v} no longer exports names these plugins import; the next boot may fail the whole plugin tree',
   compatTarget: 'After upgrading to DSH {v}, these plugins may fail to load',
   compatMissing: '{file} imports {names} from {pkg}, which the host does not export',
   compatDisable: 'Temporarily disable (append to that profile\'s cordis.patch.yml)',
   compatRemove: 'or uninstall',
-  compatHostMissing: 'target host package not found',
+  compatHostMissing: 'host package not found',
 }
 
 const DUC_STYLES_ID = 'duc-styles'
@@ -816,7 +818,13 @@ function compatSummary(compat) {
 }
 
 function pluginHasCompat(row) {
-  return row !== null && typeof row === 'object' && Array.isArray(row.compat) && row.compat.length > 0
+  return row !== null && typeof row === 'object' && Array.isArray(row.compat)
+    && row.compat.some((finding) => finding !== null && finding.against === 'current')
+}
+
+function pluginHasTargetCompat(row) {
+  return row !== null && typeof row === 'object' && Array.isArray(row.compat)
+    && row.compat.some((finding) => finding !== null && finding.against === 'target')
 }
 
 function subscribeUi(notify) {
@@ -1558,6 +1566,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
       h('span', { className: `duc-badge ${row.updateAvailable ? 'behind' : 'ok'}` },
         row.updateAvailable ? t('behind') : t('upToDate')),
       pluginHasCompat(row) ? h('span', { className: 'duc-badge high' }, t('compatBadge')) : null,
+      !pluginHasCompat(row) && pluginHasTargetCompat(row) ? h('span', { className: 'duc-badge behind' }, t('compatTargetBadge')) : null,
       !row.updateAvailable && mountedBehind > 0 ? h('span', { className: 'duc-note' },
         t('mountedUpdates', { n: mountedBehind })) : null,
       mountInfo.mounts.length > 0 ? h('span', { className: 'duc-note' },
@@ -1597,7 +1606,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
           ? `${shownProgress.percent}%`
           : t('progressPhase', { phase: t(`progress_${shownProgress.phase}`) })) : null) : null,
     result !== null ? h(UpdateResult, { t, result }) : null,
-    pluginHasCompat(row) ? h(CompatDetails, { t, findings: row.compat }) : null,
+    pluginHasCompat(row) || pluginHasTargetCompat(row) ? h(CompatDetails, { t, findings: row.compat }) : null,
     open ? h(BriefPanel, { t, name: row.name }) : null,
     hasMounted && mountedOpen ? h('div', { className: 'duc-mounted-group' },
       mountedChildren.map((child) => h(PluginRow, {
@@ -2283,6 +2292,7 @@ exports.__test = {
   trapModalFocus,
   compatSummary,
   pluginHasCompat,
+  pluginHasTargetCompat,
 }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.

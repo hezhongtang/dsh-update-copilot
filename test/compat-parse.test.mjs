@@ -7,6 +7,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { parseNamedExports, parseNamedImports } from '../lib/compat.js'
 
+test('parseNamedImports: minified named import without spaces', () => {
+  const source = 'import{settingsNamespace}from"@deepseek-ai/dsh-settings";'
+  assert.deepEqual(parseNamedImports(source), [
+    { specifier: '@deepseek-ai/dsh-settings', names: ['settingsNamespace'] },
+  ])
+})
+
 test('parseNamedImports: vision-toolkit config.js named import', () => {
   const source = `import z from '@deepseek-ai/schemastery';
 import { credentialRef } from '@deepseek-ai/dsh-credentials';

@@ -96,7 +96,7 @@ node ~/.dsh/profiles/web/node_modules/dsh-update-copilot/lib/cli.js
 node /path/to/dsh-update-copilot/lib/cli.js
 ```
 
-Exit 1 when the current host is already incompatible (prints disable / uninstall commands); exit 0 when the only findings are about a *target* DSH version. The check does not boot a profile.
+It checks the **on-disk DSH** only (no npm, no target-version preview), so it still runs when DSH will not boot. Exit 1 when the current host is already incompatible (prints disable / uninstall commands).
 
 ## Security
 
@@ -111,7 +111,7 @@ Exit 1 when the current host is already incompatible (prints disable / uninstall
 - Switching a `link:` to a remote source breaks the local link and there is no automatic switch back (the spec must be edited by hand). The npm-first strategy installs the registry version, which may differ from your local development checkout.
 - Unauthenticated GitHub API is rate-limited (60 req/h) — briefs degrade gracefully to version lists.
 - Raw `git+https://` specs are reported as-is without a comparison channel.
-- The host export check is static named imports: dynamic `import()`, APIs only reached at runtime, and `import * as ns` are not flagged. Official `@deepseek-ai/*` packages are skipped. Target-version exports are loaded via `npm pack`; a network failure degrades to current-host findings only.
+- The host export check is static named imports: dynamic `import()`, APIs only reached at runtime, and `import * as ns` are not flagged. Official `@deepseek-ai/*` packages are skipped. The target pass only packs `@deepseek-ai/dsh-*` at the DSH version line; a failed pack or an independently versioned package (`cordis`, `schemastery`) is skipped rather than reported as incompatible.
 
 ## Contributing
 

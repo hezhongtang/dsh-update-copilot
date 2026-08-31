@@ -16,8 +16,9 @@ test('compatSummary: counts current and target, unique plugin names', () => {
   }), { current: 2, target: 1, plugins: ['a', 'b'] })
 })
 
-test('pluginHasCompat: true only with a non-empty compat array', () => {
+test('pluginHasCompat: true only for current-host findings', () => {
   assert.equal(pluginHasCompat({}), false)
   assert.equal(pluginHasCompat({ compat: [] }), false)
-  assert.equal(pluginHasCompat({ compat: [{ missing: ['x'] }] }), true)
+  assert.equal(pluginHasCompat({ compat: [{ against: 'target', missing: ['x'] }] }), false)
+  assert.equal(pluginHasCompat({ compat: [{ against: 'current', missing: ['x'] }] }), true)
 })

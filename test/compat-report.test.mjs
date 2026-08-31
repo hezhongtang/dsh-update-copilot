@@ -59,6 +59,19 @@ test('buildCompatReport: current host flags the vision-toolkit crash', async () 
   })
 })
 
+test('buildCompatReport: target map that omits a specifier does not invent hostMissing', async () => {
+  const { map, version } = currentHost()
+  const report = await buildCompatReport({
+    plugins: [broken],
+    currentExports: map,
+    currentVersion: version,
+    targetExports: {},
+    targetVersion: '0.1.2-alpha.2',
+  })
+  assert.equal(report.target.findings.length, 0)
+  assert.equal(report.target.findings.some((f) => f.hostMissing === true), false)
+})
+
 test('buildCompatReport: target host with the name restored is clean; without it warns', async () => {
   const { map, version } = currentHost()
   const restored = new Set([...map['@deepseek-ai/dsh-settings'], 'settingsNamespace'])
