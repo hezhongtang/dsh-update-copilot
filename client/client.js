@@ -40,7 +40,7 @@ const NS_LOGS_OPEN = 'dsh-update-copilot:logs-open'
 
 const zh = {
   nav: '更新助手',
-  subtitle: 'DSH 本体、bundle 与全部插件的版本雷达（跨 profile 合并）',
+  subtitle: 'DeepSeek Harness 本体与全部插件的版本雷达（跨 profile 合并）',
   refresh: '刷新',
   rescanning: '扫描中…',
   lastScan: '上次扫描',
@@ -48,7 +48,7 @@ const zh = {
   loadFail: '加载失败，请重试',
   retry: '重试',
   close: '关闭',
-  coreTitle: 'DSH 本体与官方 bundle',
+  coreTitle: 'DeepSeek Harness 本体',
   corePolicy: '本体更新由 npm 管理，这里只报告、不执行',
   coreCurrent: '已是最新',
   coreBehind: '有新版本',
@@ -201,7 +201,7 @@ const zh = {
 
 const en = {
   nav: 'Update Copilot',
-  subtitle: 'Version radar for the DSH core, bundles, and plugins (merged across profiles)',
+  subtitle: 'Version radar for the DeepSeek Harness core and plugins (merged across profiles)',
   refresh: 'Refresh',
   rescanning: 'Scanning…',
   lastScan: 'Last scan',
@@ -209,7 +209,7 @@ const en = {
   loadFail: 'Failed to load, please retry',
   retry: 'Retry',
   close: 'Close',
-  coreTitle: 'DSH core & official bundles',
+  coreTitle: 'DeepSeek Harness core',
   corePolicy: 'Core updates are npm-managed — reported here, never executed',
   coreCurrent: 'Up to date',
   coreBehind: 'New version',
