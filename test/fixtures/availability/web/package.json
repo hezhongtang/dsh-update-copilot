@@ -1,0 +1,29 @@
+{
+  "name": "web",
+  "private": true,
+  "dependencies": {
+    "ok-plugin": "^1.0.0",
+    "missing-plugin": "^1.0.0",
+    "broken-surface": "^1.0.0",
+    "broken-entry": "^1.0.0",
+    "broken-client": "^1.0.0",
+    "esm-client": "^1.0.0",
+    "disabled-plugin": "^1.0.0",
+    "inert-lib": "^1.0.0",
+    "unresolvable-entry": "^1.0.0"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "ok-plugin",
+        "missing-plugin",
+        "broken-surface",
+        "broken-entry",
+        "broken-client",
+        "esm-client",
+        "disabled-plugin",
+        "unresolvable-entry"
+      ]
+    }
+  }
+}

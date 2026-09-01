@@ -197,6 +197,14 @@ const zh = {
   compatDisable: '临时禁用（追加到该 profile 的 cordis.patch.yml）',
   compatRemove: '或卸载',
   compatHostMissing: 'host 包未找到',
+  availBroken: '损坏',
+  availMissing: '缺失',
+  availDisabled: '已停用',
+  availBanner: '可用性：{broken} 个损坏、{missing} 个缺失（{names}）',
+  availUnreachable: '无法检查上游：{sources}（点刷新重试）',
+  cannotCheck: '无法检查',
+  updateRisks: '本次更新新造成的损坏',
+  updateRiskHint: '建议：追加停用补丁，或卸载',
 }
 
 const en = {
@@ -358,6 +366,14 @@ const en = {
   compatDisable: 'Temporarily disable (append to that profile\'s cordis.patch.yml)',
   compatRemove: 'or uninstall',
   compatHostMissing: 'host package not found',
+  availBroken: 'broken',
+  availMissing: 'missing',
+  availDisabled: 'disabled',
+  availBanner: 'Availability: {broken} broken, {missing} missing ({names})',
+  availUnreachable: 'Cannot check upstream: {sources} (refresh to retry)',
+  cannotCheck: 'cannot check',
+  updateRisks: 'Newly introduced by this update',
+  updateRiskHint: 'Suggested: append a disable patch, or uninstall',
 }
 
 const DUC_STYLES_ID = 'duc-styles'
@@ -863,6 +879,77 @@ function pluginHasCompat(row) {
 function pluginHasTargetCompat(row) {
   return row !== null && typeof row === 'object' && Array.isArray(row.compat)
     && row.compat.some((finding) => finding !== null && finding.against === 'target')
+}
+
+const AVAIL_RANK = { broken: 0, missing: 1, disabled: 2, inert: 3, ok: 4 }
+
+function worstAvailabilityState(states) {
+  let worst = 'ok'
+  let rank = AVAIL_RANK.ok
+  for (const state of states ?? []) {
+    const next = AVAIL_RANK[state]
+    if (typeof next === 'number' && next < rank) {
+      worst = state
+      rank = next
+    }
+  }
+  return worst
+}
+
+function rowAvailabilityState(row) {
+  if (row !== null && typeof row === 'object' && typeof row.availability?.state === 'string') {
+    return row.availability.state
+  }
+  const states = Array.isArray(row?.profiles)
+    ? row.profiles.map((p) => p?.availability?.state).filter((state) => typeof state === 'string')
+    : []
+  return worstAvailabilityState(states)
+}
+
+function availabilityBadge(state) {
+  if (state === 'broken') return { className: 'high', key: 'availBroken' }
+  if (state === 'missing') return { className: 'high', key: 'availMissing' }
+  if (state === 'disabled') return { className: 'unknown', key: 'availDisabled' }
+  return null
+}
+
+function availabilityBanner(summary, plugins) {
+  if (summary === null || typeof summary !== 'object') return null
+  const broken = typeof summary.broken === 'number' ? summary.broken : 0
+  const missing = typeof summary.missing === 'number' ? summary.missing : 0
+  if (broken + missing === 0) return null
+  const names = [...new Set((Array.isArray(plugins) ? plugins : [])
+    .filter((p) => {
+      const state = rowAvailabilityState(p)
+      return state === 'broken' || state === 'missing'
+    })
+    .map((p) => p.name)
+    .filter((name) => typeof name === 'string' && name !== ''))].sort()
+  return { broken, missing, names }
+}
+
+function unreachableBanner(summary) {
+  if (summary === null || typeof summary !== 'object') return null
+  const unreachable = typeof summary.unreachable === 'number' ? summary.unreachable : 0
+  const sources = Array.isArray(summary.unreachableSources)
+    ? summary.unreachableSources.filter((s) => typeof s === 'string' && s !== '')
+    : []
+  if (unreachable === 0 && sources.length === 0) return null
+  return { unreachable, sources }
+}
+
+function updateRisks(result) {
+  if (result === null || typeof result !== 'object') return []
+  if (Array.isArray(result.risks) && result.risks.length > 0) return result.risks
+  if (Array.isArray(result.items)) {
+    return result.items.flatMap((item) => (Array.isArray(item.risks) ? item.risks : []))
+  }
+  return []
+}
+
+function rowIsUnreachable(row) {
+  if (row !== null && typeof row === 'object' && row.reached === false) return true
+  return Array.isArray(row?.profiles) && row.profiles.some((p) => p?.reached === false)
 }
 
 function subscribeUi(notify) {
@@ -1385,6 +1472,18 @@ const KIND_KEYS = { npm: 'kindNpm', github: 'kindGithub', linked: 'kindLinked', 
  * success/failure is truthful. Single-profile outcomes (the link→remote
  * switch) keep the original one-line rendering.
  */
+function UpdateRisks({ t, result }) {
+  const risks = updateRisks(result)
+  if (risks.length === 0) return null
+  return h('div', { className: 'duc-compat' },
+    h('div', { className: 'duc-note duc-error' }, t('updateRisks')),
+    risks.map((risk, index) => h('div', { key: `${risk.profile}:${risk.name}:${index}` },
+      h('div', { className: 'duc-note' }, `${risk.name} (${risk.profile ?? '—'}): ${risk.reasons ?? risk.state}`),
+      risk.disablePatch ? h('div', { className: 'duc-note' }, t('updateRiskHint')) : null,
+      risk.disablePatch ? h('pre', { className: 'duc-cmd' }, risk.disablePatch) : null,
+      ...(Array.isArray(risk.removeCommands) ? risk.removeCommands.map((cmd) => h('code', { className: 'duc-cmd', key: cmd }, cmd)) : []))))
+}
+
 function UpdateResult({ t, result }) {
   if (result.items !== undefined && Array.isArray(result.items)) {
     return h('div', { className: `duc-note ${result.ok ? '' : 'duc-error'}` },
@@ -1399,14 +1498,16 @@ function UpdateResult({ t, result }) {
               ? t('itemCurrent', { p: item.profile })
               : item.skipped !== undefined
                 ? `${t('itemSkipped', { p: item.profile })} — ${localizedUpdateError(t, item)}`
-                : `${t('itemFailed', { p: item.profile })} — ${localizedUpdateError(t, item)}`))))
+                : `${t('itemFailed', { p: item.profile })} — ${localizedUpdateError(t, item)}`))),
+      h(UpdateRisks, { t, result }))
   }
   return h('div', { className: `duc-note ${result.ok ? '' : 'duc-error'}` },
     result.ok
       ? (result.switched !== undefined ? t('switchedRemote')
         : result.changed ? (result.hotReloaded === true ? t('hotReloaded') : t('updated'))
           : t('updateNoChange'))
-      : localizedUpdateError(t, result))
+      : localizedUpdateError(t, result),
+    h(UpdateRisks, { t, result }))
 }
 
 /**
@@ -1625,6 +1726,14 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
     }
   }
 
+  const availState = rowAvailabilityState(row)
+  const availBadge = availabilityBadge(availState)
+  const availReasons = availState === 'ok' || availState === 'inert'
+    ? null
+    : (row.availability?.reasons
+      ?? row.profiles?.find((p) => p.availability?.state === availState)?.availability?.reasons
+      ?? null)
+
   return h('div', null,
     h('div', { className: 'duc-row' },
       h('span', { className: 'duc-name' }, row.name),
@@ -1644,12 +1753,15 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
         row.profiles.map((p) => h('span', {
           key: p.profile,
           className: 'duc-chip',
-          title: `${p.profile} · ${t(KIND_KEYS[p.kind] ?? 'kindOther')} · ${t('current')}: ${p.current} → ${t('latest')}: ${p.latest ?? '—'}`,
-        }, p.updateAvailable
-          ? `${p.profile}: ${shortVer(p.current)} → ${shortVer(p.latest)}`
-          : `${p.profile}: ${shortVer(p.current)}`))),
-      h('span', { className: `duc-badge ${row.updateAvailable ? 'behind' : 'ok'}` },
-        row.updateAvailable ? t('behind') : t('upToDate')),
+          title: `${p.profile} · ${t(KIND_KEYS[p.kind] ?? 'kindOther')} · ${t('current')}: ${p.current} → ${t('latest')}: ${p.latest ?? '—'} · ${p.reached === false ? t('cannotCheck') : (p.availability?.state ?? '')}`,
+        }, p.reached === false
+          ? `${p.profile}: ${t('cannotCheck')}`
+          : p.updateAvailable
+            ? `${p.profile}: ${shortVer(p.current)} → ${shortVer(p.latest)}`
+            : `${p.profile}: ${shortVer(p.current)}`))),
+      h('span', { className: `duc-badge ${row.updateAvailable ? 'behind' : (rowIsUnreachable(row) ? 'unknown' : 'ok')}` },
+        row.updateAvailable ? t('behind') : (rowIsUnreachable(row) ? t('cannotCheck') : t('upToDate'))),
+      availBadge !== null ? h('span', { className: `duc-badge ${availBadge.className}` }, t(availBadge.key)) : null,
       pluginHasCompat(row) ? h('span', { className: 'duc-badge high' }, t('compatBadge')) : null,
       !pluginHasCompat(row) && pluginHasTargetCompat(row) ? h('span', { className: 'duc-badge behind' }, t('compatTargetBadge')) : null,
       !row.updateAvailable && mountedBehind > 0 ? h('span', { className: 'duc-note' },
@@ -1692,6 +1804,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
           : t('progressPhase', { phase: t(`progress_${shownProgress.phase}`) })) : null) : null,
     result !== null ? h(UpdateResult, { t, result }) : null,
     pluginHasCompat(row) || pluginHasTargetCompat(row) ? h(CompatDetails, { t, findings: row.compat }) : null,
+    availReasons ? h('div', { className: 'duc-note' }, availReasons) : null,
     open ? h(BriefPanel, { t, name: row.name }) : null,
     hasMounted && mountedOpen ? h('div', { className: 'duc-mounted-group' },
       mountedChildren.map((child) => h(PluginRow, {
@@ -1762,8 +1875,8 @@ function CoreCard({ t, core, compat }) {
       h('span', { className: 'duc-ver' }, shortVer(p.current),
         p.updateAvailable ? h('span', { className: 'duc-arrow' }, ' → ') : null,
         p.updateAvailable ? shortVer(p.latest) : null),
-      h('span', { className: `duc-badge ${p.updateAvailable ? 'behind' : 'ok'}` },
-        p.updateAvailable ? t('coreBehind') : t('coreCurrent')))),
+      h('span', { className: `duc-badge ${p.updateAvailable ? 'behind' : (p.reached === false ? 'unknown' : 'ok')}` },
+        p.updateAvailable ? t('coreBehind') : (p.reached === false ? t('cannotCheck') : t('coreCurrent'))))),
     !collapsed && core.updateCommand !== null ? h('div', null,
       h('div', { className: 'duc-note' }, t('corePolicy')),
       h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
@@ -1850,7 +1963,12 @@ function groupMountedRows(plugins) {
 }
 
 function nodeIsBehind(node) {
-  return node.row.updateAvailable === true || node.children.some(nodeIsBehind)
+  const state = rowAvailabilityState(node.row)
+  return node.row.updateAvailable === true
+    || rowIsUnreachable(node.row)
+    || state === 'broken'
+    || state === 'missing'
+    || node.children.some(nodeIsBehind)
 }
 
 function PluginListCard({ t, plugins, categories, onUpdated, bulkRunning = false, bundleRunning = false, refreshing = false, onRunBundle }) {
@@ -2093,6 +2211,17 @@ function PeriodicRefreshPrefRow({ t }) {
       h('span', { className: 'duc-note' }, t('periodicRefreshDesc'))))
 }
 
+function AvailabilityBanners({ t, status }) {
+  if (status === null || typeof status !== 'object') return null
+  const avail = availabilityBanner(status.summary?.availability, status.plugins)
+  const unreachable = unreachableBanner(status.summary?.availability)
+  return h(React.Fragment, null,
+    avail !== null ? h('div', { className: 'duc-banner warn' },
+      t('availBanner', { broken: avail.broken, missing: avail.missing, names: avail.names.join(', ') || '—' })) : null,
+    unreachable !== null ? h('div', { className: 'duc-banner warn' },
+      t('availUnreachable', { sources: unreachable.sources.join(', ') || String(unreachable.unreachable) })) : null)
+}
+
 function CopilotSection({ t }) {
   const { status, error, busy, load, needRestart, opsVersion, notifyUpdated } = useCopilotData(true)
   const { bulk, bulkResult, runAll } = useBulkUpdate()
@@ -2122,6 +2251,7 @@ function CopilotSection({ t }) {
           busy ? t('rescanning') : t('refresh'))) : null,
       status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, liveRunning, blocked: bundle.running || busy || ui.operation !== null }) : null),
     h(LiveBanner, { t }),
+    h(AvailabilityBanners, { t, status }),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
     // A pass started elsewhere (the sidebar quick button) still lands its
@@ -2366,6 +2496,7 @@ function PopupBody({ t, autoRun = false }) {
         : null,
       status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, liveRunning, blocked: bundle.running || busy || ui.operation !== null }) : null),
     h(LiveBanner, { t }),
+    h(AvailabilityBanners, { t, status }),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
     // A pass started elsewhere (the sidebar quick button) still lands its
@@ -2485,6 +2616,12 @@ exports.__test = {
   compatSummary,
   pluginHasCompat,
   pluginHasTargetCompat,
+  availabilityBadge,
+  availabilityBanner,
+  rowAvailabilityState,
+  unreachableBanner,
+  updateRisks,
+  rowIsUnreachable,
 }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.
