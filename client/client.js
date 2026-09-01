@@ -475,8 +475,11 @@ function injectStyles() {
     '.duc-foot-quick:focus-visible{outline:1px solid var(--dsw-alias-border-l2,#888);outline-offset:-1px}',
     '.duc-foot-quick:disabled{opacity:.5;cursor:default}',
     '.duc-foot-quick .duc-quick-icon{display:inline-flex;flex:none;align-items:center}',
-    '.duc-foot-quick.busy .duc-quick-icon{animation:duc-quick-spin 1s linear infinite}',
-    '@keyframes duc-quick-spin{to{transform:rotate(360deg)}}',
+    // Busy pulse reuses the live-badge keyframes: the bolt never spins (a
+    // directional glyph rotating reads like a clock hand), the DSH "in
+    // progress" language is the breathing pulse — same 1.1s ease as the badge
+    // dot and the live banner.
+    '.duc-foot-quick.busy .duc-quick-icon{animation:duc-live-pulse 1.1s ease-in-out infinite}',
     '.duc-foot-quick.done{color:var(--dsw-alias-state-success-primary,#2e9e5b)}',
     '.duc-foot-quick.failed{color:var(--dsw-alias-state-error-primary,#d25050)}',
     '.duc-foot-quick.none{color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.55))}',
