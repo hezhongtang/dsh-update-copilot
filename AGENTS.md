@@ -13,3 +13,17 @@ dsh-update-copilot — DeepSeek Harness 的更新插件（零依赖，host 纯 E
 ## 提问（需要用户输入时）
 
 凡需要用户确认、选择或补充信息，统一使用问答交互工具（`ask_user_question`）发起结构化提问，并给出可选项；等待用户作答后再继续。
+
+## Agent skills
+
+### Issue tracker
+
+Issue 与 spec 以 GitHub Issues 形式跟踪，统一使用 `gh` CLI 操作。见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+五个标准 triage 标签，标签字符串与角色名一致：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+Single-context：根目录一个 `CONTEXT.md` + `docs/adr/`。见 `docs/agents/domain.md`。
