@@ -127,6 +127,12 @@ const zh = {
   upToDateSection: '已最新',
   upToDateFold: '{n} 项已最新',
   badgeTitle: '{n} 项更新可用',
+  quickUpdate: '一键更新',
+  quickUpdateTitle: '点击立即更新全部可更新插件',
+  quickUpdatingTitle: '正在更新：{name}（{i}/{n}）',
+  quickDone: '✓ 已更新',
+  quickFailed: '✗ {n} 失败',
+  quickNone: '已是最新',
   prefsTitle: '偏好设置',
   hideBadge: '隐藏更新红点',
   hideBadgeDesc: '关闭侧栏按钮上的「可更新数量」徽章；弹窗与本页仍会显示完整信息',
@@ -282,6 +288,12 @@ const en = {
   upToDateSection: 'Up to date',
   upToDateFold: '{n} up to date',
   badgeTitle: '{n} update(s) available',
+  quickUpdate: 'Update all',
+  quickUpdateTitle: 'Click to update every outdated plugin',
+  quickUpdatingTitle: 'Updating: {name} ({i}/{n})',
+  quickDone: '✓ Updated',
+  quickFailed: '✗ {n} failed',
+  quickNone: 'Up to date',
   prefsTitle: 'Preferences',
   hideBadge: 'Hide update badge',
   hideBadgeDesc: 'Turn off the update-count badge on the sidebar button; the popup and this page keep full details',
@@ -445,6 +457,29 @@ function injectStyles() {
     // button's overflow:hidden bounds.
     '.duc-foot-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;box-sizing:border-box;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--dsw-alias-state-error-primary,#d25050);color:#fff;font-size:10px;line-height:1;font-variant-numeric:tabular-nums;pointer-events:none}',
     '.duc-rail .duc-foot-badge{position:absolute;top:2px;right:2px}',
+    // Quick-update seat: the trigger occupies ONE slot entry and wraps both
+    // buttons itself. The shell flexes slot entries in one row (no gap), and
+    // the official cordis entry is width:100%/flex:none — a second entry would
+    // be pushed out of the container entirely, so two entries is not an option
+    // here; the cordis rail pattern (internal column + 2px gap) is mirrored
+    // instead.
+    '.duc-foot-row{display:flex;align-items:center;gap:4px;width:calc(100% + 8px);margin:4px -4px;box-sizing:border-box}',
+    '.duc-foot-row .duc-foot-btn{width:auto;flex:1;min-width:0;margin:0}',
+    '.duc-foot-stack{display:flex;flex-direction:column;align-items:center;gap:2px}',
+    '.duc-foot-stack .duc-foot-btn{margin:0}',
+    // Secondary text-button: hover fill only, matching the cordis trigger
+    // language (borderless + interactive hover), distinct from the primary
+    // trigger's label-primary color.
+    '.duc-foot-quick{flex:none;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;max-width:100%;height:34px;padding:6px 10px;border-radius:12px;border:none;background:0 0;color:var(--dsw-alias-label-secondary,#6b7280);font-family:inherit;font-size:14px;line-height:22px;white-space:nowrap;cursor:pointer;overflow:hidden}',
+    '.duc-foot-quick:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary,inherit)}',
+    '.duc-foot-quick:focus-visible{outline:1px solid var(--dsw-alias-border-l2,#888);outline-offset:-1px}',
+    '.duc-foot-quick:disabled{opacity:.5;cursor:default}',
+    '.duc-foot-quick .duc-quick-icon{display:inline-flex;flex:none;align-items:center}',
+    '.duc-foot-quick.busy .duc-quick-icon{animation:duc-quick-spin 1s linear infinite}',
+    '@keyframes duc-quick-spin{to{transform:rotate(360deg)}}',
+    '.duc-foot-quick.done{color:var(--dsw-alias-state-success-primary,#2e9e5b)}',
+    '.duc-foot-quick.failed{color:var(--dsw-alias-state-error-primary,#d25050)}',
+    '.duc-foot-quick.none{color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.55))}',
     // while an update runs, the badge turns into a pulsing dot so the sidebar
     // keeps showing the activity even with the popup closed
     '.duc-foot-badge.live{background:var(--dsw-alias-state-info-primary,#508cff);animation:duc-live-pulse 1.1s ease-in-out infinite}',
@@ -955,6 +990,28 @@ function useBulkQueue() {
   return useSyncExternalStore(subscribeBulkQueue, () => bulkQueueState, () => null)
 }
 
+// The sequential pass's final `{ failed, changed, requiresRestart }` summary
+// is shared module-level exactly like the queue: a pass started by the sidebar
+// quick button (which renders no detail on its own) still lands its outcome
+// inside the popup/settings page, and `useBulkUpdate` subscribers everywhere
+// see one truth instead of per-seat copies.
+let bulkResultState = null
+const bulkResultSubs = new Set()
+
+function publishBulkResult(result) {
+  bulkResultState = result
+  for (const notify of bulkResultSubs) notify()
+}
+
+function subscribeBulkResult(notify) {
+  bulkResultSubs.add(notify)
+  return () => bulkResultSubs.delete(notify)
+}
+
+function useBulkResult() {
+  return useSyncExternalStore(subscribeBulkResult, () => bulkResultState, () => null)
+}
+
 /**
  * True when `name` is still waiting in the running sequential pass — queued
  * behind the currently executing item, not yet attempted. Such rows render a
@@ -1071,6 +1128,13 @@ function RadarIcon() {
     h('circle', { cx: '8', cy: '8', r: '6.2', stroke: 'currentColor', strokeWidth: '1.1' }),
     h('circle', { cx: '8', cy: '8', r: '3', stroke: 'currentColor', strokeWidth: '.9', opacity: '.5' }),
     h('path', { d: 'M8 8 L12.2 3.8', stroke: 'currentColor', strokeWidth: '1.1', strokeLinecap: 'round' }))
+}
+
+/** Quick-update bolt: filled glyph, drawn in the same hand-written style as
+ * the radar mark so the pair reads as one family. */
+function BoltIcon() {
+  return h('svg', { viewBox: '0 0 16 16', width: '16', height: '16', 'aria-hidden': 'true', fill: 'currentColor' },
+    h('path', { d: 'M9.4 1.2 L3.8 9.5 H7.7 L6.6 14.8 L12.2 6.5 H8.3 Z' }))
 }
 
 /**
@@ -1409,6 +1473,24 @@ function globalUpdateTargets(plugins) {
   return plugins
     .filter((row) => row.canAutoUpdate === true && row.updateAvailable === true)
     .map(rowUpdateTarget)
+}
+
+/**
+ * Classify one sequential pass's per-package results into the sidebar quick
+ * button's terminal states. `[]` reads as "nothing to update" (the pass never
+ * started); any failure wins over a mixed success. Exported through __test for
+ * regression tests.
+ */
+function quickOutcome(results) {
+  if (!Array.isArray(results) || results.length === 0) {
+    return { phase: 'none', failed: 0, requiresRestart: false }
+  }
+  const failed = results.filter((r) => r?.outcome?.ok !== true).length
+  return {
+    phase: failed > 0 ? 'failed' : 'done',
+    failed,
+    requiresRestart: results.some((r) => r?.outcome?.requiresRestart === true),
+  }
 }
 
 function mountedUpdateCount(children) {
@@ -1805,12 +1887,12 @@ function PluginListCard({ t, plugins, categories, onUpdated, bulkRunning = false
  */
 function useBulkUpdate() {
   const [bulk, setBulk] = useState({ running: false, index: 0, total: 0, name: null })
-  const [bulkResult, setBulkResult] = useState(null)
+  const bulkResult = useBulkResult()
   const runAll = useCallback(async (plugins, onUpdated) => {
     const targets = globalUpdateTargets(plugins)
-    if (targets.length === 0) return
+    if (targets.length === 0) return []
     return withMutationLock('all', async () => {
-      setBulkResult(null)
+      publishBulkResult(null)
       const queue = targets.map((target) => target.name)
       const snapshot = (index, name) => ({ running: true, index, total: targets.length, name, queue })
       setBulk(snapshot(0, null))
@@ -1828,7 +1910,7 @@ function useBulkUpdate() {
         }
         const failed = results.filter((r) => r.outcome.ok !== true).length
         const changed = results.some((r) => r.outcome.changed === true)
-        setBulkResult({ failed, changed, requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
+        publishBulkResult({ failed, changed, requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
         if (changed) await onUpdated?.({ requiresRestart: results.some((r) => r.outcome.requiresRestart === true) })
         return results
       } finally {
@@ -2039,6 +2121,12 @@ function CopilotSection({ t }) {
     h(LiveBanner, { t }),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
+    // A pass started elsewhere (the sidebar quick button) still lands its
+    // restart requirement here — the local needRestart flag only tracks this
+    // seat's own runs; skip when this seat already shows it.
+    bulkResult !== null && !bulk.running && bulkResult.requiresRestart === true && needRestart !== true
+      ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`)
+      : null,
     bundle.running ? h('div', { className: 'duc-bulk-progress', title: t('updatingBundle', bundle) }, t('updatingBundle', bundle)) : null,
     bundleResult !== null && !bundle.running ? h(BundleUpdateResult, { t, result: bundleResult }) : null,
     error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error} `,
@@ -2064,12 +2152,21 @@ function CopilotSection({ t }) {
 }
 
 // ---------------------------------------------------------------------------
-// Seat 2: the sidebar foot trigger with the lazy badge.
+// Seat 2: the sidebar foot trigger with the lazy badge + one-click quick
+// update. ONE slot entry carries both buttons (the shell flexes entries in one
+// row with no gap and the cordis entry is width:100%/flex:none, so a second
+// entry would overflow rather than sit beside this one).
 // ---------------------------------------------------------------------------
 
-function FooterButton({ t, wide }) {
+function FootTrigger({ t, wide }) {
   const ui = useUi()
   const live = useLive()
+  const bulkQueue = useBulkQueue()
+  const { runAll } = useBulkUpdate()
+  // Terminal quick state: null = idle, { phase } = loading | done | failed |
+  // none (auto-resets after 4s), plus the outcome details for tooltips.
+  const [quick, setQuick] = useState(null)
+  const quickBusyRef = useRef(false)
   useEffect(() => { injectStyles() }, [])
   useEffect(() => {
     let cancelled = false
@@ -2096,6 +2193,13 @@ function FooterButton({ t, wide }) {
     }, PERIODIC_REFRESH_MS)
     return () => clearInterval(id)
   }, [ui.periodicRefresh])
+  // Terminal feedback lives 4 seconds, then the button returns to idle.
+  useEffect(() => {
+    if (quick === null || quick.phase === 'loading') return undefined
+    const id = setTimeout(() => setQuick(null), 4000)
+    return () => clearTimeout(id)
+  }, [quick])
+
   const behind = ui.summary !== null
     ? (ui.summary.behindPlugins ?? 0) + (ui.summary.behindCore ?? 0)
     : 0
@@ -2104,8 +2208,55 @@ function FooterButton({ t, wide }) {
     ? live.current.name
     : null
   const showBadge = behind > 0 && ui.hideBadge !== true
+  // Quick button state: this seat's pass (queue), any live update (agent
+  // tools / another tab), or the pre-pass scan read. The queue owns the
+  // numeric readout; a foreign live update shows a spinner only.
+  const queueRunning = bulkQueue !== null && bulkQueue.running === true
+  const quickBusy = (quick !== null && quick.phase === 'loading') || queueRunning || liveRunning
+  const quickIndex = queueRunning && bulkQueue !== null ? `${bulkQueue.index}/${bulkQueue.total}` : null
 
-  return h('button', {
+  async function onQuick() {
+    // Synchronous re-entrancy guard: `quickBusy` (state) only flips after a
+    // render, so a second click in the same tick would otherwise start two
+    // passes; the mutation lock inside runAll would reject the second one and
+    // surface as a misleading "none" outcome.
+    if (quickBusyRef.current || quickBusy) return
+    quickBusyRef.current = true
+    setQuick({ phase: 'loading', failed: 0, requiresRestart: false })
+    try {
+      // Reuse the scan cache (usually the startup scan); force only when no
+      // scan has ever landed, mirroring the popup's lazy policy.
+      const force = ui.summary === null
+      const data = await api(`/dsh-update-copilot/status${force ? '?force=1' : ''}`)
+      setUi({ summary: data.summary, generatedAt: data.generatedAt })
+      const plugins = Array.isArray(data.plugins) ? data.plugins : []
+      if (globalUpdateTargets(plugins).length === 0) {
+        setQuick({ phase: 'none', failed: 0, requiresRestart: false })
+        return
+      }
+      const results = await runAll(plugins, () => loadBadgeStatus().catch(() => {}))
+      // runAll resolves undefined when the mutation lock refused the pass —
+      // another seat (row update, agent tool, another tab) already holds it.
+      if (results === undefined) {
+        setQuick({ phase: 'failed', failed: 1, requiresRestart: false, error: t('liveBusy') })
+        setUi({ open: true })
+        return
+      }
+      const outcome = quickOutcome(results)
+      setQuick(outcome)
+      // Failures and restart-required land the details where they exist:
+      // the popup (and settings page) render the shared bulk result.
+      if (outcome.phase === 'failed' || outcome.requiresRestart === true) setUi({ open: true })
+    } catch (error) {
+      setQuick({ phase: 'failed', failed: 1, requiresRestart: false, error: String(error?.message ?? error) })
+      setUi({ open: true })
+    } finally {
+      quickBusyRef.current = false
+      loadBadgeStatus().catch(() => {})
+    }
+  }
+
+  const trigger = h('button', {
     className: wide === true ? 'duc-foot-btn' : 'duc-foot-btn duc-rail',
     title: liveRunning
       ? t('liveUpdating', { name: liveName ?? '…' })
@@ -2129,6 +2280,37 @@ function FooterButton({ t, wide }) {
       : showBadge
         ? h('span', { className: 'duc-foot-badge' }, String(behind))
         : null)
+
+  const quickClass = quickBusy
+    ? 'duc-foot-quick busy'
+    : quick !== null && quick.phase !== 'loading'
+      ? `duc-foot-quick ${quick.phase}`
+      : 'duc-foot-quick'
+  const quickLabel = quickIndex !== null
+    ? quickIndex
+    : quick !== null && quick.phase === 'loading' ? '…'
+      : quick !== null && quick.phase === 'none' ? t('quickNone')
+        : quick !== null && quick.phase === 'failed' ? t('quickFailed', { n: quick.failed })
+          : quick !== null && quick.phase === 'done' ? t('quickDone')
+            : t('quickUpdate')
+  const quickTitle = queueRunning && bulkQueue !== null
+    ? t('quickUpdatingTitle', { name: bulkQueue.name ?? '…', i: bulkQueue.index, n: bulkQueue.total })
+    : liveRunning ? t('liveUpdating', { name: liveName ?? '…' })
+      : quick !== null && quick.phase === 'failed' ? (quick.error ?? t('quickFailed', { n: quick.failed }))
+        : t('quickUpdateTitle')
+  const quickButton = h('button', {
+    className: wide === true ? quickClass : `duc-foot-btn duc-rail ${quickClass}`,
+    title: quickTitle,
+    'aria-label': t('quickUpdate'),
+    disabled: quickBusy,
+    onClick: onQuick,
+  },
+    h('span', { className: 'duc-quick-icon' }, BoltIcon()),
+    wide === true ? h('span', { className: 'duc-foot-label' }, quickLabel) : null)
+
+  return wide === true
+    ? h('div', { className: 'duc-foot-row' }, trigger, quickButton)
+    : h('div', { className: 'duc-foot-stack' }, trigger, quickButton)
 }
 
 // ---------------------------------------------------------------------------
@@ -2183,6 +2365,12 @@ function PopupBody({ t, autoRun = false }) {
     h(LiveBanner, { t }),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
+    // A pass started elsewhere (the sidebar quick button) still lands its
+    // restart requirement here — the local needRestart flag only tracks this
+    // seat's own runs; skip when this seat already shows it.
+    bulkResult !== null && !bulk.running && bulkResult.requiresRestart === true && needRestart !== true
+      ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`)
+      : null,
     bundle.running ? h('div', { className: 'duc-bulk-progress', title: t('updatingBundle', bundle) }, t('updatingBundle', bundle)) : null,
     bundleResult !== null && !bundle.running ? h(BundleUpdateResult, { t, result: bundleResult }) : null,
     needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
@@ -2271,6 +2459,7 @@ exports.name = 'dsh-update-copilot'
 exports.__test = {
   consumeUpdateResponse,
   autoTargetsOf,
+  quickOutcome,
   loadBadgeStatus,
   getUiState: () => uiState,
   acquireMutation,
@@ -2318,7 +2507,7 @@ exports.apply = function apply(ctx) {
     label: () => t('nav'),
     locale: NS,
     inject: () => ({ t }),
-  }, (props) => h(FooterButton, { t, wide: props?.wide === true })))
+  }, (props) => h(FootTrigger, { t, wide: props?.wide === true })))
 
   // The popup: one frame-wide floating layer occupant that renders null closed.
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
