@@ -206,6 +206,9 @@ const zh = {
   updateRisks: '本次更新新造成的损坏',
   updateRiskHint: '建议：追加停用补丁，或卸载',
   riskCollateral: '连带损坏（非本次更新目标，可能被共享依赖重写波及）',
+  rollbackTo: '回滚到 {target}',
+  rollbackConfirm: '确认回滚？',
+  rollbackLinked: '回滚（手动命令）',
   peerWarnBadge: 'peer 范围不匹配',
   peerWarnDetail: '{specifier} 声明 {range}，不包含{role} dsh {version}',
   peerRoleCurrent: '当前',
@@ -381,6 +384,9 @@ const en = {
   updateRisks: 'Newly introduced by this update',
   updateRiskHint: 'Suggested: append a disable patch, or uninstall',
   riskCollateral: 'collateral (not the update target — likely hit by shared-dependency rewriting)',
+  rollbackTo: 'Roll back to {target}',
+  rollbackConfirm: 'Confirm rollback?',
+  rollbackLinked: 'Roll back (manual command)',
   peerWarnBadge: 'peer range mismatch',
   peerWarnDetail: '{specifier} declares {range}, which does not include {role} dsh {version}',
   peerRoleCurrent: 'current',
@@ -666,7 +672,7 @@ async function consumeUpdateResponse(res, onEvent) {
  * update to one profile. Throws on transport errors and on every answer shape
  * `consumeUpdateResponse` classifies as a failure.
  */
-async function streamUpdate(name, onEvent, profile = undefined, source = undefined, profiles = undefined) {
+async function streamUpdate(name, onEvent, profile = undefined, source = undefined, profiles = undefined, target = undefined) {
   const res = await fetch('/dsh-update-copilot/update', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -676,6 +682,7 @@ async function streamUpdate(name, onEvent, profile = undefined, source = undefin
       ...(profile !== undefined && profile !== '' ? { profile } : {}),
       ...(source !== undefined ? { source } : {}),
       ...(Array.isArray(profiles) ? { profiles } : {}),
+      ...(target !== undefined && target !== '' ? { target } : {}),
     }),
     cache: 'no-store',
   })
@@ -902,6 +909,14 @@ function rowPeerWarnings(row) {
 }
 
 /** Pre-flight warnings from one update outcome (own or per-profile items). */
+/** Rollback suggestion carried by the last update outcome, if any. */
+function rollbackOfResult(result) {
+  const rollback = result !== null && typeof result === 'object' ? result.rollback : null
+  return rollback !== null && typeof rollback === 'object' && (typeof rollback.target === 'string' || typeof rollback.command === 'string')
+    ? rollback
+    : null
+}
+
 function updateWarnings(result) {
   if (result === null || typeof result !== 'object') return []
   if (Array.isArray(result.warnings) && result.warnings.length > 0) return result.warnings
@@ -1677,6 +1692,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
   const [open, setOpen] = useState(autoBrief && row.updateAvailable === true)
   const [mountedOpen, setMountedOpen] = useState(false)
   const [switchConfirming, setSwitchConfirming] = useState(false)
+  const [rollbackConfirming, setRollbackConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
   // Live update progress: null = idle; percent=null renders an indeterminate
@@ -1773,6 +1789,29 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
     }
   }
 
+  async function runRollback() {
+    if (rollbackOfResult(result) === null) return
+    if (!acquireMutation('rollback')) return
+    setBusy(true)
+    setRollbackConfirming(false)
+    setProgress({ percent: null, phase: 'start' })
+    try {
+      const outcome = await streamUpdate(row.name, (event) => {
+        if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
+        else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
+        else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
+      }, undefined, undefined, rowUpdateTarget(row).profiles, rollbackOfResult(result).target)
+      setResult(outcome)
+      if (outcome.ok && outcome.changed) await onUpdated(outcome)
+    } catch (e) {
+      setResult({ ok: false, error: String(e.message ?? e) })
+    } finally {
+      setBusy(false)
+      setProgress(null)
+      releaseMutation()
+    }
+  }
+
   const availState = rowAvailabilityState(row)
   const availBadge = availabilityBadge(availState)
   const availReasons = availState === 'ok' || availState === 'inert'
@@ -1851,6 +1890,22 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
           ? `${shownProgress.percent}%`
           : t('progressPhase', { phase: t(`progress_${shownProgress.phase}`) })) : null) : null,
     result !== null ? h(UpdateResult, { t, result }) : null,
+    (() => {
+      const rollback = rollbackOfResult(result)
+      if (rollback === null || busy || liveRunning) return null
+      if (typeof rollback.command === 'string') {
+        return h('div', { className: 'duc-compat' },
+          h('div', { className: 'duc-note' }, t('rollbackLinked')),
+          h('pre', { className: 'duc-cmd' }, rollback.command))
+      }
+      return h('div', { className: 'duc-actions' },
+        h('button', {
+          className: `duc-btn ${rollbackConfirming ? 'danger' : ''}`,
+          onClick: () => (rollbackConfirming ? runRollback() : setRollbackConfirming(true)),
+          onBlur: () => setRollbackConfirming(false),
+          disabled: actionsDisabled,
+        }, rollbackConfirming ? t('rollbackConfirm') : t('rollbackTo', { target: shortVer(rollback.target) })))
+    })(),
     pluginHasCompat(row) || pluginHasTargetCompat(row) ? h(CompatDetails, { t, findings: row.compat }) : null,
     rowPeerWarnings(row).length > 0 ? h(PeerWarningDetails, { t, findings: rowPeerWarnings(row) }) : null,
     availReasons ? h('div', { className: 'duc-note' }, availReasons) : null,
@@ -2686,6 +2741,7 @@ exports.__test = {
   rowIsUnreachable,
   rowPeerWarnings,
   updateWarnings,
+  rollbackOfResult,
 }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.
