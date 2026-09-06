@@ -80,6 +80,11 @@ test('peer findings cover only @deepseek-ai specifiers and real versions', () =>
   assert.equal(findings[0].against, 'current')
   assert.equal(findings[0].range, '^4.0.0-rc.7')
   assert.equal(findings[0].version, '0.1.3-alpha.1')
+  // Bilingual message in the house 'zh / en' single-string convention — the
+  // agent tools and CLI print it as-is.
+  assert.equal(typeof findings[0].message, 'string')
+  assert.match(findings[0].message, /声明 \^4\.0\.0-rc\.7/)
+  assert.match(findings[0].message, /declares \^4\.0\.0-rc\.7/)
 })
 
 test('peer findings evaluate the current and the target host independently', () => {

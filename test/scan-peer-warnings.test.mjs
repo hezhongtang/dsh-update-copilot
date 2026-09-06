@@ -67,6 +67,8 @@ test('scan attaches a target-role peer warning to the package row', async () => 
     assert.equal(warning.against, 'target')
     assert.equal(warning.version, '0.1.3-alpha.1')
     assert.equal(warning.range, '^0.1.2')
+    // Per-profile evaluation: each finding carries the installing profile.
+    assert.equal(warning.profile, 'web')
   } finally {
     restore()
   }

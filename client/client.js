@@ -908,7 +908,6 @@ function rowPeerWarnings(row) {
   return []
 }
 
-/** Pre-flight warnings from one update outcome (own or per-profile items). */
 /** Rollback suggestion carried by the last update outcome, if any. */
 function rollbackOfResult(result) {
   const rollback = result !== null && typeof result === 'object' ? result.rollback : null
@@ -917,6 +916,7 @@ function rollbackOfResult(result) {
     : null
 }
 
+/** Pre-flight warnings from one update outcome (own or per-profile items). */
 function updateWarnings(result) {
   if (result === null || typeof result !== 'object') return []
   if (Array.isArray(result.warnings) && result.warnings.length > 0) return result.warnings
@@ -1469,6 +1469,7 @@ function BriefBody({ t, brief }) {
                 'npm ↗'))
           : null),
     h('div', null, h('b', null, `${t('recommendation')}: `), localizedRecommendation(t, brief)),
+    Array.isArray(brief.warnings) && brief.warnings.length > 0 ? h(PeerWarningDetails, { t, findings: brief.warnings }) : null,
     localizedNote(t, m.note) !== null ? h('div', { className: 'duc-note' }, localizedNote(t, m.note)) : null,
     listItems.length > 0
       ? h('ul', { className: 'duc-list' }, listItems)
