@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { listSnapshots, recordUpdateSnapshot, rollbackTargetOf, sanitizeName, validateRollbackTarget } from '../lib/history.js'
+import { attachRollback, listSnapshots, recordUpdateSnapshot, rollbackTargetOf, sanitizeName, validateRollbackTarget } from '../lib/history.js'
 
 const home = mkdtempSync(join(tmpdir(), 'dsh-update-copilot-history-'))
 process.env.DSH_HOME = home
@@ -111,4 +111,17 @@ test('rollback targets validated against the recorded package', () => {
   // github-channel dependency is rejected (and vice versa).
   assert.equal(validateRollbackTarget('gh-plugin', 'github:owner/repo', 'gh-plugin@1.2.3'), null)
   assert.equal(validateRollbackTarget('my-plugin', spec, `github:owner/repo#${sha}`), null)
+})
+
+test('attachRollback rides only outcomes that actually changed disk state', () => {
+  const snapshot = { at: '2026-09-06T00:00:00Z', profile: 'web', name: 'my-plugin', before: { version: '1.4.2', spec: '^1.4.0', commit: null } }
+  // A failed update that half-applied still carries the rollback suggestion.
+  const failed = attachRollback({ ok: false, code: 'update_failed', changed: true, profile: 'web', name: 'my-plugin' }, snapshot)
+  assert.equal(failed.rollback.target, 'my-plugin@1.4.2')
+  assert.equal(failed.rollback.channel, 'npm')
+  // No change → nothing to roll back; no snapshot → no suggestion.
+  assert.equal(attachRollback({ ok: false, changed: false }, snapshot).rollback, undefined)
+  assert.equal(attachRollback({ ok: true, changed: true }, null).rollback, undefined)
+  const unchanged = attachRollback({ ok: true, changed: true, profile: 'web', name: 'my-plugin' }, { ...snapshot, before: { spec: 'link:../x', commit: null } })
+  assert.equal(unchanged.rollback, undefined)
 })

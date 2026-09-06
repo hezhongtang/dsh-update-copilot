@@ -81,6 +81,18 @@ test('a clean preflight lets the update proceed to the mutation layer', async ()
   assert.equal(outcome.forced, undefined)
 })
 
+test('preflight warnings ride the successful update outcome unchanged', async () => {
+  const warning = {
+    type: 'peer', specifier: '@deepseek-ai/dsh', range: '^0.1.2', against: 'target', version: '0.1.3-alpha.1',
+    message: 'peer warning',
+  }
+  const outcome = await updatePlugin('web', 'p', {
+    preflight: async () => ({ warnings: [warning], blockers: [], dshTarget: '0.1.3-alpha.1' }),
+  }, {})
+  assert.notEqual(outcome.code, 'preflight_blocked')
+  assert.deepEqual(outcome.warnings, [warning])
+})
+
 test('a blocked profile in a multi-profile batch is listed while the pass continues', async () => {
   const perProfile = async (profile) => (profile === 'web'
     ? blockedPreflight()
