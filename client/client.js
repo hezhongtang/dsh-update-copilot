@@ -205,6 +205,11 @@ const zh = {
   cannotCheck: '无法检查',
   updateRisks: '本次更新新造成的损坏',
   updateRiskHint: '建议：追加停用补丁，或卸载',
+  peerWarnBadge: 'peer 范围不匹配',
+  peerWarnDetail: '{specifier} 声明 {range}，不包含{role} dsh {version}',
+  peerRoleCurrent: '当前',
+  peerRoleTarget: '目标',
+  updateWarnings: '更新预检预警（peer 范围）',
 }
 
 const en = {
@@ -374,6 +379,11 @@ const en = {
   cannotCheck: 'cannot check',
   updateRisks: 'Newly introduced by this update',
   updateRiskHint: 'Suggested: append a disable patch, or uninstall',
+  peerWarnBadge: 'peer range mismatch',
+  peerWarnDetail: '{specifier} declares {range}, which does not include {role} dsh {version}',
+  peerRoleCurrent: 'current',
+  peerRoleTarget: 'target',
+  updateWarnings: 'Pre-flight warnings (peer ranges)',
 }
 
 const DUC_STYLES_ID = 'duc-styles'
@@ -879,6 +889,24 @@ function pluginHasCompat(row) {
 function pluginHasTargetCompat(row) {
   return row !== null && typeof row === 'object' && Array.isArray(row.compat)
     && row.compat.some((finding) => finding !== null && finding.against === 'target')
+}
+
+/** Structured peer-range warnings on one package row (aggregated scan). */
+function rowPeerWarnings(row) {
+  if (row !== null && typeof row === 'object' && Array.isArray(row.peerWarnings)) {
+    return row.peerWarnings.filter((w) => w !== null && typeof w === 'object')
+  }
+  return []
+}
+
+/** Pre-flight warnings from one update outcome (own or per-profile items). */
+function updateWarnings(result) {
+  if (result === null || typeof result !== 'object') return []
+  if (Array.isArray(result.warnings) && result.warnings.length > 0) return result.warnings
+  if (Array.isArray(result.items)) {
+    return result.items.flatMap((item) => (Array.isArray(item.warnings) ? item.warnings : []))
+  }
+  return []
 }
 
 const AVAIL_RANK = { broken: 0, missing: 1, disabled: 2, inert: 3, ok: 4 }
@@ -1484,6 +1512,20 @@ function UpdateRisks({ t, result }) {
       ...(Array.isArray(risk.removeCommands) ? risk.removeCommands.map((cmd) => h('code', { className: 'duc-cmd', key: cmd }, cmd)) : []))))
 }
 
+function UpdateWarnings({ t, result }) {
+  const warnings = updateWarnings(result)
+  if (warnings.length === 0) return null
+  return h('div', { className: 'duc-compat' },
+    h('div', { className: 'duc-note' }, t('updateWarnings')),
+    warnings.map((warning, index) => h('div', { key: `${warning.specifier}:${warning.against}:${index}`, className: 'duc-note' },
+      t('peerWarnDetail', {
+        specifier: warning.specifier ?? '',
+        range: warning.range ?? '',
+        role: t(warning.against === 'target' ? 'peerRoleTarget' : 'peerRoleCurrent'),
+        version: warning.version ?? '',
+      }))))
+}
+
 function UpdateResult({ t, result }) {
   if (result.items !== undefined && Array.isArray(result.items)) {
     return h('div', { className: `duc-note ${result.ok ? '' : 'duc-error'}` },
@@ -1499,6 +1541,7 @@ function UpdateResult({ t, result }) {
               : item.skipped !== undefined
                 ? `${t('itemSkipped', { p: item.profile })} — ${localizedUpdateError(t, item)}`
                 : `${t('itemFailed', { p: item.profile })} — ${localizedUpdateError(t, item)}`))),
+      h(UpdateWarnings, { t, result }),
       h(UpdateRisks, { t, result }))
   }
   return h('div', { className: `duc-note ${result.ok ? '' : 'duc-error'}` },
@@ -1507,6 +1550,7 @@ function UpdateResult({ t, result }) {
         : result.changed ? (result.hotReloaded === true ? t('hotReloaded') : t('updated'))
           : t('updateNoChange'))
       : localizedUpdateError(t, result),
+    h(UpdateWarnings, { t, result }),
     h(UpdateRisks, { t, result }))
 }
 
@@ -1764,6 +1808,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
       availBadge !== null ? h('span', { className: `duc-badge ${availBadge.className}` }, t(availBadge.key)) : null,
       pluginHasCompat(row) ? h('span', { className: 'duc-badge high' }, t('compatBadge')) : null,
       !pluginHasCompat(row) && pluginHasTargetCompat(row) ? h('span', { className: 'duc-badge behind' }, t('compatTargetBadge')) : null,
+      rowPeerWarnings(row).length > 0 ? h('span', { className: 'duc-badge behind', title: t('peerWarnBadge') }, t('peerWarnBadge')) : null,
       !row.updateAvailable && mountedBehind > 0 ? h('span', { className: 'duc-note' },
         t('mountedUpdates', { n: mountedBehind })) : null,
       mountInfo.mounts.length > 0 ? h('span', { className: 'duc-note' },
@@ -1804,6 +1849,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
           : t('progressPhase', { phase: t(`progress_${shownProgress.phase}`) })) : null) : null,
     result !== null ? h(UpdateResult, { t, result }) : null,
     pluginHasCompat(row) || pluginHasTargetCompat(row) ? h(CompatDetails, { t, findings: row.compat }) : null,
+    rowPeerWarnings(row).length > 0 ? h(PeerWarningDetails, { t, findings: rowPeerWarnings(row) }) : null,
     availReasons ? h('div', { className: 'duc-note' }, availReasons) : null,
     open ? h(BriefPanel, { t, name: row.name }) : null,
     hasMounted && mountedOpen ? h('div', { className: 'duc-mounted-group' },
@@ -1812,6 +1858,19 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
         mountedChildren: child.children, onRunBundle,
       }))) : null,
     )
+}
+
+/** Evidence lines for one package row's peer-range warnings. */
+function PeerWarningDetails({ t, findings }) {
+  if (!Array.isArray(findings) || findings.length === 0) return null
+  return h('div', { className: 'duc-compat' },
+    findings.map((finding, index) => h('div', { key: `${finding.specifier}:${finding.against}:${index}`, className: 'duc-note' },
+      t('peerWarnDetail', {
+        specifier: finding.specifier ?? '',
+        range: finding.range ?? '',
+        role: t(finding.against === 'target' ? 'peerRoleTarget' : 'peerRoleCurrent'),
+        version: finding.version ?? '',
+      }))))
 }
 
 function CompatDetails({ t, findings }) {
@@ -2622,6 +2681,8 @@ exports.__test = {
   unreachableBanner,
   updateRisks,
   rowIsUnreachable,
+  rowPeerWarnings,
+  updateWarnings,
 }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.
