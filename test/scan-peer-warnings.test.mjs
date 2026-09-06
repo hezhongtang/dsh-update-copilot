@@ -46,8 +46,24 @@ test.after(() => {
 function mockRegistry() {
   const originalFetch = globalThis.fetch
   globalThis.fetch = async (url) => {
-    const body = String(url).includes('my-plugin')
-      ? { versions: { '1.0.0': {} }, 'dist-tags': { latest: '1.0.0' } }
+    const target = String(url)
+    if (target.includes('api.github.com')) {
+      return {
+        ok: true,
+        json: async () => [{
+          tag_name: 'v2.0.0', name: 'v2.0.0', published_at: '2026-09-01T00:00:00Z',
+          html_url: 'https://github.com/owner/repo/releases/v2.0.0',
+          body: '## Changes\n- BREAKING CHANGE: removed settingsNamespace',
+        }],
+      }
+    }
+    const body = target.includes('my-plugin')
+      ? {
+          // Two versions so the brief has an update to summarize (breaking
+          // signals only ride material for outdated rows).
+          versions: { '1.0.0': {}, '2.0.0': {} }, 'dist-tags': { latest: '2.0.0' },
+          repository: { url: 'git+https://github.com/owner/repo.git' },
+        }
       : { versions: { '0.1.2': {}, '0.1.3-alpha.1': {} }, 'dist-tags': { latest: '0.1.3-alpha.1' } }
     return { ok: true, json: async () => body }
   }
@@ -95,6 +111,20 @@ test('brief carries the same structured warning objects', async () => {
     assert.equal(brief.warnings?.length, 1)
     assert.equal(brief.warnings[0].against, 'target')
     assert.equal(brief.warnings[0].specifier, '@deepseek-ai/dsh')
+  } finally {
+    restore()
+  }
+})
+
+test('brief surfaces breaking-change hits from the fetched release notes', async () => {
+  const restore = mockRegistry()
+  try {
+    const brief = await buildBrief('my-plugin', 'web', true)
+    assert.equal(brief.error, undefined)
+    assert.ok(Array.isArray(brief.breaking) && brief.breaking.length > 0, 'breaking hits present')
+    assert.equal(brief.breaking[0].type, 'breaking')
+    assert.equal(brief.breaking[0].source, 'release')
+    assert.match(brief.breaking[0].line, /BREAKING CHANGE/)
   } finally {
     restore()
   }

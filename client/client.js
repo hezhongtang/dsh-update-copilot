@@ -213,6 +213,8 @@ const zh = {
   forceUpdate: '强制更新',
   confirmForce: '确认强制更新？',
   forceHint: '更新已被预检拦截；证据见下（可复制的停用补丁 / 卸载命令）',
+  breakingBadge: '破坏性变更',
+  breakingHint: '以下行命中破坏性变更标记（启发式，仅供参考）',
   peerWarnBadge: 'peer 范围不匹配',
   peerWarnDetail: '{specifier} 声明 {range}，不包含{role} dsh {version}',
   peerRoleCurrent: '当前',
@@ -395,6 +397,8 @@ const en = {
   forceUpdate: 'Force update',
   confirmForce: 'Confirm force update?',
   forceHint: 'The update was blocked by preflight; evidence below (copyable disable patch / uninstall command)',
+  breakingBadge: 'breaking changes',
+  breakingHint: 'Lines matching breaking-change markers (heuristic, informational)',
   peerWarnBadge: 'peer range mismatch',
   peerWarnDetail: '{specifier} declares {range}, which does not include {role} dsh {version}',
   peerRoleCurrent: 'current',
@@ -1479,6 +1483,9 @@ function BriefBody({ t, brief }) {
                 'npm ↗'))
           : null),
     h('div', null, h('b', null, `${t('recommendation')}: `), localizedRecommendation(t, brief)),
+    Array.isArray(brief.breaking) && brief.breaking.length > 0 ? h('div', { className: 'duc-compat' },
+      h('div', { className: 'duc-note duc-error' }, `${t('breakingBadge')} — ${t('breakingHint')}`),
+      brief.breaking.map((finding, index) => h('div', { key: `${finding.source}:${index}`, className: 'duc-note' }, finding.line))) : null,
     Array.isArray(brief.warnings) && brief.warnings.length > 0 ? h(PeerWarningDetails, { t, findings: brief.warnings }) : null,
     localizedNote(t, m.note) !== null ? h('div', { className: 'duc-note' }, localizedNote(t, m.note)) : null,
     listItems.length > 0
@@ -1546,13 +1553,15 @@ function UpdateWarnings({ t, result }) {
   if (warnings.length === 0) return null
   return h('div', { className: 'duc-compat' },
     h('div', { className: 'duc-note' }, t('updateWarnings')),
-    warnings.map((warning, index) => h('div', { key: `${warning.specifier}:${warning.against}:${index}`, className: 'duc-note' },
-      t('peerWarnDetail', {
-        specifier: warning.specifier ?? '',
-        range: warning.range ?? '',
-        role: t(warning.against === 'target' ? 'peerRoleTarget' : 'peerRoleCurrent'),
-        version: warning.version ?? '',
-      }))))
+    warnings.map((warning, index) => h('div', { key: `${warning.type ?? 'w'}:${warning.specifier ?? warning.line ?? ''}:${warning.against ?? ''}:${index}`, className: 'duc-note' },
+      warning.type === 'breaking'
+        ? warning.message
+        : t('peerWarnDetail', {
+            specifier: warning.specifier ?? '',
+            range: warning.range ?? '',
+            role: t(warning.against === 'target' ? 'peerRoleTarget' : 'peerRoleCurrent'),
+            version: warning.version ?? '',
+          }))))
 }
 
 function UpdateResult({ t, result }) {
