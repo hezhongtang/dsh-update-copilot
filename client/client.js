@@ -219,7 +219,7 @@ const zh = {
   peerWarnDetail: '{specifier} 声明 {range}，不包含{role} dsh {version}',
   peerRoleCurrent: '当前',
   peerRoleTarget: '目标',
-  updateWarnings: '更新预检预警（peer 范围）',
+  updateWarnings: '更新预检预警',
 }
 
 const en = {
@@ -403,7 +403,7 @@ const en = {
   peerWarnDetail: '{specifier} declares {range}, which does not include {role} dsh {version}',
   peerRoleCurrent: 'current',
   peerRoleTarget: 'target',
-  updateWarnings: 'Pre-flight warnings (peer ranges)',
+  updateWarnings: 'Pre-flight warnings',
 }
 
 const DUC_STYLES_ID = 'duc-styles'
