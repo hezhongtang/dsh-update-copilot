@@ -209,6 +209,10 @@ const zh = {
   rollbackTo: '回滚到 {target}',
   rollbackConfirm: '确认回滚？',
   rollbackLinked: '回滚（手动命令）',
+  errPreflightBlocked: '已拦截：目标 dsh 不再导出该插件 import 的名字，强行更新可能让整个 profile 起不来',
+  forceUpdate: '强制更新',
+  confirmForce: '确认强制更新？',
+  forceHint: '更新已被预检拦截；证据见下（可复制的停用补丁 / 卸载命令）',
   peerWarnBadge: 'peer 范围不匹配',
   peerWarnDetail: '{specifier} 声明 {range}，不包含{role} dsh {version}',
   peerRoleCurrent: '当前',
@@ -387,6 +391,10 @@ const en = {
   rollbackTo: 'Roll back to {target}',
   rollbackConfirm: 'Confirm rollback?',
   rollbackLinked: 'Roll back (manual command)',
+  errPreflightBlocked: 'Blocked: the target dsh no longer exports names this plugin imports — forcing can brick the whole profile at boot',
+  forceUpdate: 'Force update',
+  confirmForce: 'Confirm force update?',
+  forceHint: 'The update was blocked by preflight; evidence below (copyable disable patch / uninstall command)',
   peerWarnBadge: 'peer range mismatch',
   peerWarnDetail: '{specifier} declares {range}, which does not include {role} dsh {version}',
   peerRoleCurrent: 'current',
@@ -672,7 +680,7 @@ async function consumeUpdateResponse(res, onEvent) {
  * update to one profile. Throws on transport errors and on every answer shape
  * `consumeUpdateResponse` classifies as a failure.
  */
-async function streamUpdate(name, onEvent, profile = undefined, source = undefined, profiles = undefined, target = undefined) {
+async function streamUpdate(name, onEvent, profile = undefined, source = undefined, profiles = undefined, target = undefined, force = undefined) {
   const res = await fetch('/dsh-update-copilot/update', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -683,6 +691,7 @@ async function streamUpdate(name, onEvent, profile = undefined, source = undefin
       ...(source !== undefined ? { source } : {}),
       ...(Array.isArray(profiles) ? { profiles } : {}),
       ...(target !== undefined && target !== '' ? { target } : {}),
+      ...(force !== undefined ? { force } : {}),
     }),
     cache: 'no-store',
   })
@@ -1386,6 +1395,7 @@ const ERROR_CODE_KEYS = {
   unsafe_target: 'errUnsafe',
   invalid_profile: 'errUnsafe',
   confirm_required: 'errConfirm',
+  preflight_blocked: 'errPreflightBlocked',
   update_failed: 'errFailed',
   update_timeout: 'errTimeout',
   update_noop: 'errNoop',
@@ -1694,6 +1704,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
   const [mountedOpen, setMountedOpen] = useState(false)
   const [switchConfirming, setSwitchConfirming] = useState(false)
   const [rollbackConfirming, setRollbackConfirming] = useState(false)
+  const [forceConfirming, setForceConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
   // Live update progress: null = idle; percent=null renders an indeterminate
@@ -1744,7 +1755,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
   const note = row.official ? t('officialNote') : null
   const actionsDisabled = rowActionsDisabled(busy, bulkRunning || refreshing || ui.operation !== null)
 
-  async function runUpdate() {
+  async function runUpdate(force = undefined) {
     if (!acquireMutation('row')) return
     setBusy(true)
     setResult(null)
@@ -1754,7 +1765,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
         if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
         else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
-      }, undefined, undefined, rowUpdateTarget(row).profiles)
+      }, undefined, undefined, rowUpdateTarget(row).profiles, undefined, force)
       setResult(outcome)
       if (outcome.ok && outcome.changed) await onUpdated(outcome)
     } catch (e) {
@@ -1891,6 +1902,16 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
           ? `${shownProgress.percent}%`
           : t('progressPhase', { phase: t(`progress_${shownProgress.phase}`) })) : null) : null,
     result !== null ? h(UpdateResult, { t, result }) : null,
+    result !== null && result.code === 'preflight_blocked' ? h('div', { className: 'duc-compat' },
+      h('div', { className: 'duc-note duc-error' }, t('forceHint')),
+      Array.isArray(result.blockers) ? h(CompatDetails, { t, findings: result.blockers }) : null,
+      busy || liveRunning ? null : h('div', { className: 'duc-actions' },
+        h('button', {
+          className: `duc-btn ${forceConfirming ? 'danger' : ''}`,
+          onClick: () => (forceConfirming ? (setForceConfirming(false), runUpdate(true)) : setForceConfirming(true)),
+          onBlur: () => setForceConfirming(false),
+          disabled: actionsDisabled,
+        }, forceConfirming ? t('confirmForce') : t('forceUpdate')))) : null,
     (() => {
       const rollback = rollbackOfResult(result)
       if (rollback === null || busy || liveRunning) return null
