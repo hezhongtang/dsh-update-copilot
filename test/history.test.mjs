@@ -78,8 +78,18 @@ test('rollback targets: npm version, pinned github commit, linked command text',
     rollbackTargetOf({ name: 'gh-plugin', before: { version: '0.1.0', spec: 'github:owner/repo', commit: sha } }),
     { channel: 'github', target: `github:owner/repo#${sha}` },
   )
-  assert.deepEqual(
+  // A #path:-fragmented spec has NO safe auto target: the github: shorthand
+  // cannot pin commit + subpath together, and a bare pin would reinstall
+  // the repo ROOT over the subpath package. The snapshot keeps spec and
+  // commit for manual recovery instead.
+  assert.equal(
     rollbackTargetOf({ name: 'gh-plugin', before: { version: null, spec: 'github:owner/repo#path:/sub', commit: sha } }),
+    null,
+  )
+  // A pin fragment on the spec itself (the state a rollback install leaves
+  // behind) still derives: the target simply re-pins the same repo root.
+  assert.deepEqual(
+    rollbackTargetOf({ name: 'gh-plugin', before: { version: '0.1.0', spec: `github:owner/repo#${'b'.repeat(40)}`, commit: sha } }),
     { channel: 'github', target: `github:owner/repo#${sha}` },
   )
   const linked = rollbackTargetOf({ name: 'dev-plugin', before: { version: '1.0.0', spec: 'link:../dev-plugin', commit: sha } })
@@ -102,7 +112,17 @@ test('rollback targets validated against the recorded package', () => {
   assert.equal(validateRollbackTarget('my-plugin', spec, 'not-a-target'), null)
   const gh = validateRollbackTarget('gh-plugin', 'github:owner/repo', `github:owner/repo#${sha}`)
   assert.equal(gh.target, `github:owner/repo#${sha}`)
-  assert.equal(gh.repoKey, `owner/repo#${sha}`)
+  // The commit key mirrors the lockfile's codeload URLs: the pin lives in
+  // the URL path, so the key drops pin fragments and keeps only #path:.
+  assert.equal(gh.repoKey, 'owner/repo')
+  // The structural #path: fragment is part of the package address: dropping
+  // it would reinstall the repo root over a subpath package, adding one
+  // would migrate a root dependency into a subpath — both rejected.
+  assert.equal(validateRollbackTarget('gh-plugin', 'github:owner/repo#path:/sub', `github:owner/repo#${sha}`), null)
+  assert.equal(validateRollbackTarget('gh-plugin', 'github:owner/repo', 'github:owner/repo#path:/sub'), null)
+  // A target that preserves the subpath fragment addresses the same package.
+  const ghSub = validateRollbackTarget('gh-plugin', 'github:owner/repo#path:/sub', 'github:owner/repo#path:/sub')
+  assert.equal(ghSub.repoKey, 'owner/repo#path:/sub')
   // A github rollback of a DIFFERENT repo is rejected.
   assert.equal(validateRollbackTarget('gh-plugin', 'github:owner/repo', 'github:other/repo#x'), null)
   // A github rollback target may not silently drop the pin.
