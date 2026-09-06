@@ -107,4 +107,8 @@ test('rollback targets validated against the recorded package', () => {
   assert.equal(validateRollbackTarget('gh-plugin', 'github:owner/repo', 'github:other/repo#x'), null)
   // A github rollback target may not silently drop the pin.
   assert.equal(validateRollbackTarget('gh-plugin', 'github:owner/repo', 'github:owner/repo'), null)
+  // Channel migration is not rollback: an npm-shaped target against a
+  // github-channel dependency is rejected (and vice versa).
+  assert.equal(validateRollbackTarget('gh-plugin', 'github:owner/repo', 'gh-plugin@1.2.3'), null)
+  assert.equal(validateRollbackTarget('my-plugin', spec, `github:owner/repo#${sha}`), null)
 })
