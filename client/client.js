@@ -695,7 +695,10 @@ async function streamUpdate(name, onEvent, profile = undefined, source = undefin
       ...(source !== undefined ? { source } : {}),
       ...(Array.isArray(profiles) ? { profiles } : {}),
       ...(target !== undefined && target !== '' ? { target } : {}),
-      ...(force !== undefined ? { force } : {}),
+      // Only a literal true forces past the preflight gate; the server applies
+      // the same rule (lib/routes.js). A stray truthy value (a click event, a
+      // string) must neither reach the wire nor crash the body serialization.
+      ...(force === true ? { force: true } : {}),
     }),
     cache: 'no-store',
   })
@@ -1884,7 +1887,11 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
           ? h('button', { className: 'duc-btn', disabled: true }, t('updating'))
           : queuedInBulk
             ? h('button', { className: 'duc-btn', disabled: true, title: t('queuedHint') }, t('queued'))
-            : h('button', { className: 'duc-btn primary', onClick: runUpdate, disabled: actionsDisabled || liveRunning, title: liveRunning ? t('liveBusy') : undefined }, t('update'))) : null,
+            // Wrapped, not passed bare: React hands the synthetic click event
+            // to the handler, and runUpdate's first parameter is `force` —
+            // a bare reference put a DOM button (via its fiber) into the POST
+            // body and JSON.stringify threw before fetch ran.
+            : h('button', { className: 'duc-btn primary', onClick: () => runUpdate(), disabled: actionsDisabled || liveRunning, title: liveRunning ? t('liveBusy') : undefined }, t('update'))) : null,
         canUpdateBundle ? h('button', {
           className: 'duc-btn',
           onClick: () => onRunBundle?.(row, mountedChildren),
@@ -2740,6 +2747,10 @@ exports.name = 'dsh-update-copilot'
 // apply }.
 exports.__test = {
   consumeUpdateResponse,
+  streamUpdate,
+  // Render seam: hands back the element for one plugin row so a test can walk
+  // it and drive the shipped handlers (see test/row-update-click.test.mjs).
+  pluginRowElement: (props) => h(PluginRow, props),
   autoTargetsOf,
   quickOutcome,
   loadBadgeStatus,
