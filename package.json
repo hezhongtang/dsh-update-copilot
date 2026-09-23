@@ -18,7 +18,7 @@
   "type": "module",
   "main": "lib/index.js",
   "bin": {
-    "dsh-update-copilot": "./lib/cli.js"
+    "dsh-update-copilot": "lib/cli.js"
   },
   "license": "MIT",
   "repository": {
