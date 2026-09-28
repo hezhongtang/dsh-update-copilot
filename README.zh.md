@@ -5,7 +5,7 @@
 [![Zero build](https://img.shields.io/badge/zero--build-no%20bundler-2EA44F?style=flat-square)](lib)
 [![GitHub stars](https://img.shields.io/github/stars/hezhongtang/dsh-update-copilot?style=flat-square&logo=github)](https://github.com/hezhongtang/dsh-update-copilot/stargazers)
 
-**[DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) 的更新助手：追踪 dsh 本体、官方 bundle 和所有已装插件——跨全部 profile 按包合并展示，对符合独立更新条件的安装一键更新。**
+**[DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) 的更新助手：追踪 dsh 本体、官方 bundle 和所有已装插件——跨全部 profile 按包合并展示；插件更新带预检闸门一键执行，本体支持双模式代执行（钉版本/dist-tag，全套兼容闸门，仅限可写的全局 npm 安装），补丁名体检捕捉被 dsh 升级静默丢弃的配置。**
 
 <p align="center">
   <img src="assets/popup.png" width="480" alt="更新助手弹窗：「DeepSeek Harness 本体」卡片默认收起，插件跨 profile 合并进「可更新」分组（行内一键更新），「已最新」分组折叠。" />

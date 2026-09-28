@@ -5,7 +5,7 @@
 [![Zero build](https://img.shields.io/badge/zero--build-no%20bundler-2EA44F?style=flat-square)](lib)
 [![GitHub stars](https://img.shields.io/github/stars/hezhongtang/dsh-update-copilot?style=flat-square&logo=github)](https://github.com/hezhongtang/dsh-update-copilot/stargazers)
 
-**An update copilot for [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh): tracks the dsh core, shipped bundles, and every installed plugin — merged package-centric across all profiles, with one-click updates for eligible independently owned installs.**
+**An update copilot for [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh): tracks the dsh core, shipped bundles, and every installed plugin — merged package-centric across all profiles — with gated one-click plugin updates, a dual-mode core update (pinned or dist-tag, full compatibility gate, global-npm installs only), and a patch-name audit that catches config silently dropped by dsh upgrades.**
 
 <p align="center">
   <img src="assets/popup.png" width="480" alt="The Update Copilot popup: the DeepSeek Harness core card collapsed, plugins merged across profiles into an Updates-available section with one-click update buttons, and the Up-to-date section folded away." />

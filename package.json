@@ -1,7 +1,7 @@
 {
   "name": "dsh-update-copilot",
   "version": "0.10.0",
-  "description": "Update copilot for DeepSeek Harness: tracks the DSH core, bundled packages, and every installed plugin across npm and git, merged package-centric over all profiles, with one-click updates for eligible profiles. · DSH 更新助手：追踪 dsh 本体、bundle 包和所有已装插件（npm 与 git 双通道，跨 profile 按包合并），仅对符合条件的 profile 一键更新。",
+  "description": "Update copilot for DeepSeek Harness: full version radar over the DSH core, shipped bundles, and every installed plugin (npm + git channels, merged package-centric across profiles); gated one-click plugin updates, dual-mode core updates (pinned or dist-tag) behind the full compatibility gate, patch-name audits with post-flight probes, history & rollback. · DSH 更新助手：本体/bundle/插件全量雷达（npm+git 双通道，跨 profile 按包合并）；插件更新带预检闸门，本体双模式代执行（钉版本/dist-tag + 全套兼容闸门），补丁名体检与更新后探测，历史快照与回滚。",
   "keywords": [
     "dsh-plugin",
     "deepseek-harness",
@@ -13,7 +13,9 @@
     "semver",
     "changelog",
     "agent-tools",
-    "cordis-plugin"
+    "cordis-plugin",
+    "preflight",
+    "patch-audit"
   ],
   "type": "module",
   "main": "lib/index.js",
