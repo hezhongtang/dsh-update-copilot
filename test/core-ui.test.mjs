@@ -51,7 +51,7 @@ function makeT() {
   }
 }
 
-test('core card renders the single pinned command and the gated execute button', () => {
+test('core card renders the versions and the gated execute button', () => {
   // Function components render by calling them (see renderRow in
   // row-update-click.test.mjs); the stub's useState returns initial state.
   const descriptor = coreCardElement({ t: makeT(), core: corePayload, compat: { current: { findings: [] }, target: null } })
@@ -68,6 +68,8 @@ test('core card renders the single pinned command and the gated execute button',
   assert.ok(flat.includes('0.2.0-rc.1'))
   // The execute action exists (label key present on some button).
   assert.ok(buttons.some((b) => String(b.children?.[0] ?? '').includes('coreUpdate')))
+  // The collapsed header keeps the copyable manual command.
+  assert.ok(buttons.some((b) => String(b.children?.[0] ?? '') === 'copyCmd' || String(b.children?.[0] ?? '').includes('copyCmd')))
 })
 
 test('core card degrades to copy-only when the install is not a writable global npm one', () => {
@@ -81,5 +83,7 @@ test('core card degrades to copy-only when the install is not a writable global 
   walk(element, (node) => { if (typeof node === 'string') texts.push(node) })
   const flat = texts.join(' | ')
   assert.ok(flat.includes('coreNoExec'))
+  // The pinned command renders verbatim for manual copy.
+  assert.ok(flat.includes('npm install -g @deepseek-ai/dsh@0.2.0-rc.1'))
   assert.ok(!flat.includes('coreUpdate')) // no execute button in copy-only mode
 })

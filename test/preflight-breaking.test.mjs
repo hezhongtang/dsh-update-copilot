@@ -1,7 +1,7 @@
 // Breaking-change signals (lib/preflight.js breakingFindings): heuristic
-// line-level markers over the brief's already-fetched material — release
-// bodies and commit subjects. Purely informational: a hit is never a gate
-// blocker, and missing material degrades to no signal.
+// line-level markers over the changelog material the collector fetches —
+// release bodies and commit subjects. Purely informational: a hit is never a
+// gate blocker, and missing material degrades to no signal.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { breakingFindings } from '../lib/preflight.js'

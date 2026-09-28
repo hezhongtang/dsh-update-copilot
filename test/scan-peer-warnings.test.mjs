@@ -60,8 +60,8 @@ function mockRegistry() {
     }
     const body = target.includes('my-plugin')
       ? {
-          // Two versions so the brief has an update to summarize (breaking
-          // signals only ride material for outdated rows).
+          // Two versions so the row is behind and material gets fetched
+          // (breaking signals only ride material for outdated rows).
           versions: { '1.0.0': {}, '2.0.0': {} }, 'dist-tags': { latest: '2.0.0' },
           repository: { url: 'git+https://github.com/owner/repo.git' },
         }

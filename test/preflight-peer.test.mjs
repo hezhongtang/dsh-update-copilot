@@ -4,7 +4,7 @@
 // prerelease semver the range still *looks* fine while it no longer admits
 // the running (or target) host — the exact class that bricks profiles at
 // boot. These tests pin the prerelease-correct range semantics first (the
-// #5609 boundary cases), then the warning objects the scan/brief/executor
+// #5609 boundary cases), then the warning objects the scan/executor
 // surfaces attach.
 
 import test from 'node:test'

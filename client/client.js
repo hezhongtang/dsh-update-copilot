@@ -5,20 +5,14 @@ var module = { exports: {} }; var exports = module.exports;
 /**
  * dsh-update-copilot client.
  *
- * Three seats:
- *  - Settings section: the full update radar page (core + every profile's
- *    plugins, merged package-centrically with ownership disclosure, inline
- *    update highlights, and one-click / bulk updates. The core card and the
- *    plugins card fold their quiet parts: core & official bundles collapsed
- *    by default, plugins split into "updates available" and a folded
- *    "up to date" section.
+ * Two seats:
  *  - sidebar.footer.action: a trigger beside the Settings button. Its badge
  *    hydrates once after mount and once more after startup scan completion — no
- *    ongoing background polling unless the user opts into the 30-minute
- *    periodic refresh in settings (one interval per page, this seat drives it).
- *  - shell.overlay: a modal popup with the compact radar — same folded layout
- *    as the settings page; same one-click updates. Opened via the
- *    sidebar button or the `?duc=1` URL parameter (visual-test hook).
+ *    ongoing background polling.
+ *  - shell.overlay: a modal popup carrying the whole update radar — the core
+ *    card (collapsed by default), every profile's plugins merged
+ *    package-centrically with ownership disclosure, and one-click / bulk
+ *    updates. Opened via the sidebar button.
  *
  * Hand-authored CJS bundle (no build step); externals are `react` and the
  * host-provided `@deepseek-ai/dsh-client-ui-primitives` icon set.
@@ -54,7 +48,7 @@ const zh = {
   coreBehind: '有新版本',
   copyCmd: '复制升级命令',
   copied: '已复制',
-  coreTagSame: '相同',
+  coreSameVersion: '相同',
   coreDowngradeWarn: '注意：目标版本 {v} 比当前安装的 {cur} 更旧 —— 这是一条降级路径，确认后才会执行。',
   coreUpdate: '更新本体',
   coreConfirm: '确认执行？',
@@ -197,7 +191,7 @@ const en = {
   coreBehind: 'New version',
   copyCmd: 'Copy upgrade command',
   copied: 'Copied',
-  coreTagSame: 'same',
+  coreSameVersion: 'same',
   coreDowngradeWarn: 'Careful: the target {v} is OLDER than the installed {cur} — this is a downgrade path and runs only after confirmation.',
   coreUpdate: 'Update core',
   coreConfirm: 'Run it?',
@@ -331,8 +325,6 @@ function injectStyles() {
   if (typeof document === 'undefined' || document.head === null) return
   const css = [
     '.duc{display:flex;flex-direction:column;gap:14px;font-size:13px;line-height:1.5}',
-    '.duc-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}',
-    '.duc-head h2{margin:0;font-size:16px;font-weight:600}',
     '.duc-sub{opacity:.7;font-size:12px}',
     '.duc-meta{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;opacity:.75}',
     '.duc-btn{border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer}',
@@ -351,7 +343,6 @@ function injectStyles() {
     '.duc-note{font-size:12px;opacity:.65}',
     '.duc-section-label{font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--dsw-alias-label-secondary,#6b7280);padding-top:4px}',
     '.duc-section-body{display:flex;flex-direction:column;gap:0}',
-    '.duc-profiles-hint{font-size:12px;opacity:.75;border-left:2px solid rgba(127,127,127,.35);padding:2px 10px}',
     '.duc-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid rgba(127,127,127,.15)}',
     '.duc-row:first-of-type{border-top:none}',
     '.duc-name{font-weight:500;word-break:break-all}',
@@ -381,7 +372,6 @@ function injectStyles() {
     '.duc-progress-label{flex:none;font-variant-numeric:tabular-nums;min-width:38px;text-align:right;opacity:.8}',
     '.duc-list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px}',
     '.duc-list a{color:inherit}',
-    '.duc-release-body{white-space:pre-wrap;word-break:break-word;opacity:.85;font-size:12px;line-height:1.5;margin-top:2px;max-height:96px;overflow:auto}',
     '.duc a{color:inherit}',
     '.duc-repolink{color:inherit;text-decoration:none;opacity:.55;font-size:12px;line-height:1;flex:none}',
     '.duc-repolink:hover{opacity:1;text-decoration:underline}',
@@ -834,7 +824,7 @@ function useUi() {
 // Live "update in progress" state, server-truthful.
 //
 // The server keeps a live slot for the currently executing update — recorded
-// from EVERY trigger path (web routes, agent tools, link: switches) — and
+// from EVERY trigger path (web routes, agent tools) — and
 // serves it at /dsh-update-copilot/update-status. One shared poller per page
 // reads it and publishes through a useSyncExternalStore store, so every seat
 // renders the same reality: the sidebar badge turns into a pulsing dot, the
@@ -919,8 +909,8 @@ function liveRowProgress(live) {
 // Shared bulk-queue state, cross-seat on one page.
 //
 // The sequential "update all" / "update bundle" runners know their own queue
-// and current position. Publishing it module-level (not per-seat) means the
-// popup and the settings page — two seats on the same page — both render
+// and current position. Publishing it module-level (not per-seat) means every
+// seat renders
 // queued rows as "pending" even when only one seat started the run, and the
 // info survives the starting seat unmounting (e.g. closing the popup
 // mid-run). The server never sees the queue (every update is its own
@@ -950,7 +940,7 @@ function useBulkQueue() {
 // The sequential pass's final `{ failed, changed, requiresRestart }` summary
 // is shared module-level exactly like the queue: a pass started by the sidebar
 // quick button (which renders no detail on its own) still lands its outcome
-// inside the popup/settings page, and `useBulkUpdate` subscribers everywhere
+// inside the popup, and `useBulkUpdate` subscribers everywhere
 // see one truth instead of per-seat copies.
 let bulkResultState = null
 const bulkResultSubs = new Set()
@@ -1034,7 +1024,7 @@ function loadBadgeStatus(force = false) {
     })
 }
 
-/** One scan-data owner shared by the settings page and the popup. */
+/** One scan-data owner for the popup. */
 function useCopilotData(active) {
   const [status, setStatus] = useState(null)
   const [error, setError] = useState(null)
@@ -1174,8 +1164,8 @@ const KIND_KEYS = { npm: 'kindNpm', github: 'kindGithub', linked: 'kindLinked', 
 /**
  * Result line for one update outcome. Per-package outcomes carry an `items`
  * array (one entry per profile); render them as a compact list so a mixed
- * success/failure is truthful. Single-profile outcomes (the link→remote
- * switch) keep the original one-line rendering.
+ * success/failure is truthful. Single-profile outcomes keep the original
+ * one-line rendering.
  */
 function UpdateRisks({ t, result }) {
   const risks = updateRisks(result)
@@ -1236,8 +1226,8 @@ function UpdateResult({ t, result }) {
 /**
  * One package row, merged across profiles: the version cell lists every
  * installed profile with its current → latest; a single click on Update runs
- * only in its explicit eligible profiles. The only remaining two-step action is the destructive
- * link→remote source switch.
+ * only in its explicit eligible profiles. The only remaining two-step action
+ * is the destructive rollback.
  */
 function rowActionsDisabled(busy, bulkRunning) {
   return busy || bulkRunning === true
@@ -1686,12 +1676,14 @@ function CoreCard({ t, core, compat, onUpdated }) {
           v: target.version,
           cur: coreRow?.current ?? '—',
         })) : null,
-      target.relation === 'same' ? h('div', { className: 'duc-note' }, t('coreTagSame')) : null,
+      target.relation === 'same' ? h('div', { className: 'duc-note' }, t('coreSameVersion')) : null,
       !executable ? h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
         h('code', { className: 'duc-cmd', style: { flex: 1 } }, command),
         h('button', { className: 'duc-btn', onClick: () => copyCmd(command) }, copied ? t('copied') : t('copyCmd')),
-        h('div', { className: 'duc-note' },
-          target.relation === 'same' ? null : t(install.method !== 'global' ? 'coreNoExec' : 'coreNotWritable', { method: install.method }))) : h('div', { className: 'duc-actions' },
+        target.relation === 'same'
+          ? null
+          : h('div', { className: 'duc-note' },
+              t(install.method !== 'global' ? 'coreNoExec' : 'coreNotWritable', { method: install.method }))) : h('div', { className: 'duc-actions' },
         busy || liveRunning
           ? h('button', { className: 'duc-btn', disabled: true, title: liveRunning ? t('liveBusy') : undefined }, t('coreUpdating'))
           : h('button', {
@@ -1737,8 +1729,8 @@ function CoreCard({ t, core, compat, onUpdated }) {
 /**
  * The single plugins card: every package merged across profiles, one row per
  * package, split into two sections — "updates available" always rendered,
- * "up to date" behind a disclosure folded by default (settings page and popup
- * share this layout). `plugins` is the aggregated list from the scan.
+ * "up to date" behind a disclosure folded by default. `plugins` is the
+ * aggregated list from the scan.
  */
 function partitionPluginGroups(plugins) {
   const mounted = groupMountedRows(plugins)
@@ -1888,8 +1880,8 @@ function useBulkUpdate() {
 }
 
 /**
- * Persistent "an update is executing right now" banner for the settings page
- * and the popup. Renders whenever the server reports a running update —
+ * Persistent "an update is executing right now" banner for the popup.
+ * Renders whenever the server reports a running update —
  * whoever started it (this seat, the auto-run, the agent tools, another tab).
  * `current` names the package (and profile for single-profile updates);
  * `progress` adds the latest stage label or percentage.
@@ -1963,7 +1955,7 @@ function BundleUpdateResult({ t, result }) {
         : `${t('itemFailed', { p: item.name })} — ${localizedUpdateError(t, item.outcome)}`))))
 }
 
-/** Toolbar actions shared by the settings page and the popup. */
+/** Toolbar actions for the popup. */
 function UpdateAllButton({ t, plugins, bulk, runAll, liveRunning, blocked = false }) {
   const hasTargets = globalUpdateTargets(plugins).length > 0
   if (bulk.running) {
@@ -2147,7 +2139,7 @@ function FootTrigger({ t, wide }) {
       const outcome = quickOutcome(results)
       setQuick(outcome)
       // Failures and restart-required land the details where they exist:
-      // the popup (and settings page) render the shared bulk result.
+      // the popup renders the shared bulk result.
       if (outcome.phase === 'failed' || outcome.requiresRestart === true) setUi({ open: true })
     } catch (error) {
       setQuick({ phase: 'failed', failed: 1, requiresRestart: false, error: String(error?.message ?? error) })
