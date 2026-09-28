@@ -1365,11 +1365,18 @@ function BoltIcon() {
  * Disclosure chevron: official 14px outline icon when the primitives bundle is
  * present, a plain text glyph otherwise. `open` faces down (expanded), closed
  * faces right (collapsed) — the dsh-market disclosure convention.
+ *
+ * Host 0.1.7 renamed the icon exports from size-suffixed (…Outline14) to
+ * weight-suffixed (…OutlineRegular); resolve every generation the plugin has
+ * shipped against, and degrade to the text glyph on a name the module does not
+ * export — h(undefined) throws React #130 and takes down the whole seat.
  */
 function Chevron({ open }) {
   if (primitives !== null) {
-    const Icon = open ? primitives.IconChevronDownOutline14 : primitives.IconChevronRightOutline14
-    return h(Icon, { size: 14 })
+    const down = primitives.IconChevronDownOutlineRegular ?? primitives.IconChevronDownOutline14 ?? primitives.IconChevronDownOutline
+    const right = primitives.IconChevronRightOutlineRegular ?? primitives.IconChevronRightOutline14 ?? primitives.IconChevronRightOutline
+    const Icon = open ? down : right
+    if (Icon !== null && Icon !== undefined) return h(Icon, { size: 14 })
   }
   return h('span', { className: 'duc-chevron-fallback' }, open ? '▾' : '▸')
 }
@@ -2960,6 +2967,7 @@ exports.__test = {
   // it and drive the shipped handlers (see test/row-update-click.test.mjs).
   pluginRowElement: (props) => h(PluginRow, props),
   coreCardElement: (props) => h(CoreCard, props),
+  chevronElement: (props) => h(Chevron, props),
   patchAuditBannerElement: (props) => h(PatchAuditBanner, props),
   updateWarningsElement: (props) => h(UpdateWarnings, props),
   autoTargetsOf,

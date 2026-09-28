@@ -1,8 +1,10 @@
 // Shared client-bundle loader for regression tests: evaluates the shipped
 // client/client.js (a window.__ModuleLoader__.load(...) CJS bundle) against a
-// react stub so the tests drive the exact code the browser runs. The host's
-// `@deepseek-ai/dsh-client-ui-primitives` require is intentionally absent —
-// the bundle catches that and falls back to text glyphs.
+// react stub so the tests drive the exact code the browser runs. By default
+// the host's `@deepseek-ai/dsh-client-ui-primitives` require is absent — the
+// bundle catches that and falls back to text glyphs; pass { primitives } to
+// exercise the primitives-present path against a specific host generation's
+// export shape (see chevron-icon-compat.test.mjs).
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,7 +12,7 @@ import assert from 'node:assert/strict'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 
-export function loadBundle() {
+export function loadBundle({ primitives } = {}) {
   const reactStub = new Proxy({}, {
     get(target, key) {
       // Descriptors (not bare {}) so a test can walk the element tree the
@@ -31,6 +33,10 @@ export function loadBundle() {
       load({ factory }) {
         const requireStub = (spec) => {
           if (spec === 'react') return reactStub
+          if (spec === '@deepseek-ai/dsh-client-ui-primitives') {
+            if (primitives !== undefined) return primitives
+            throw new Error('test: primitives intentionally absent')
+          }
           throw new Error(`test: unexpected require(${spec})`)
         }
         exportsObj = factory(requireStub)
