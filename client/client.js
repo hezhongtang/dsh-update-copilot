@@ -49,11 +49,26 @@ const zh = {
   retry: '重试',
   close: '关闭',
   coreTitle: 'DeepSeek Harness 本体',
-  corePolicy: '本体更新由 npm 管理，这里只报告、不执行',
+  corePolicy: '全局 npm 安装的本体更新可在此代执行（带兼容闸门，完成后需重启 dsh）；npx 等其余安装形态仅提供命令。',
   coreCurrent: '已是最新',
   coreBehind: '有新版本',
   copyCmd: '复制升级命令',
   copied: '已复制',
+  coreModePinned: '钉版本',
+  coreModeTag: '{tag}（→ {v}）',
+  coreTagDown: '降级',
+  coreTagSame: '相同',
+  coreDowngradeWarn: '注意：{tag} 此刻解析到 {v}，比当前安装的 {cur} 更旧 —— 这是一条降级路径，确认后才会执行。',
+  coreUpdate: '更新本体',
+  coreConfirm: '确认执行？',
+  coreConfirmDown: '确认降级？',
+  coreUpdating: '本体更新中…',
+  coreNoExec: '当前安装形态（{method}）不可代执行，请手动运行命令',
+  coreNotWritable: 'npm 全局前缀不可写（可能需要 sudo），请手动运行命令',
+  coreExecBlocked: '本体更新被闸门拦下',
+  coreUpdated: '✓ 本体已更新至 {v}',
+  coreRestartHint: '当前进程仍运行旧版 {cur} —— 重启 dsh（如 dsh web）后新版本才生效。',
+  coreRollbackCmd: '回滚命令（重装 {v}）',
   pluginsTitle: '插件（跨 profile 合并）',
   profilesHint: '同一插件可能装在多个 profile（web / headless / desktop…）；这里按包名合并展示，只更新具有独立更新资格的 profile。',
   noPlugins: '没有任何插件依赖',
@@ -137,7 +152,7 @@ const zh = {
   hideBadge: '隐藏更新红点',
   hideBadgeDesc: '关闭侧栏按钮上的「可更新数量」徽章；弹窗与本页仍会显示完整信息',
   autoUpdate: '点击按钮时自动更新',
-  autoUpdateDesc: '开启后，点击侧栏「更新助手」按钮时若发现有落后的插件，立即自动开始「一键更新全部」；dsh 本体仍只报告、不执行',
+  autoUpdateDesc: '开启后，点击侧栏「更新助手」按钮时若发现有落后的插件，立即自动开始「一键更新全部」；dsh 本体不会自动更新（仅可通过本体卡片手动确认执行）',
   periodicRefresh: '每 30 分钟自动刷新',
   periodicRefreshDesc: '默认关闭：上游只在启动时和你的操作时被查询。开启后，每 30 分钟在后台强制刷新一次，徽章与打开的雷达视图自动跟进',
   progressPhase: '{phase}…',
@@ -233,11 +248,26 @@ const en = {
   retry: 'Retry',
   close: 'Close',
   coreTitle: 'DeepSeek Harness core',
-  corePolicy: 'Core updates are npm-managed — reported here, never executed',
+  corePolicy: 'Core updates run here for writable global npm installs (gated; a dsh restart is required afterwards) — other install shapes get the command only.',
   coreCurrent: 'Up to date',
   coreBehind: 'New version',
   copyCmd: 'Copy upgrade command',
   copied: 'Copied',
+  coreModePinned: 'Pinned',
+  coreModeTag: '{tag} (→ {v})',
+  coreTagDown: 'downgrade',
+  coreTagSame: 'same',
+  coreDowngradeWarn: 'Careful: {tag} currently resolves to {v}, OLDER than the installed {cur} — this is a downgrade path and runs only after confirmation.',
+  coreUpdate: 'Update core',
+  coreConfirm: 'Run it?',
+  coreConfirmDown: 'Confirm downgrade?',
+  coreUpdating: 'Updating core…',
+  coreNoExec: 'This install shape ({method}) cannot be auto-updated — run the command manually',
+  coreNotWritable: 'The npm global prefix is not writable (may need sudo) — run the command manually',
+  coreExecBlocked: 'Core update blocked by the gate',
+  coreUpdated: '✓ Core updated to {v}',
+  coreRestartHint: 'This process still runs the old {cur} — restart dsh (e.g. dsh web) for the new version to take effect.',
+  coreRollbackCmd: 'Rollback command (reinstall {v})',
   pluginsTitle: 'Plugins (merged across profiles)',
   profilesHint: 'A package may be installed in several profiles (web / headless / desktop…). Rows are merged by package name; Update targets only profiles eligible for an independent update.',
   noPlugins: 'No plugin dependencies installed',
@@ -321,7 +351,7 @@ const en = {
   hideBadge: 'Hide update badge',
   hideBadgeDesc: 'Turn off the update-count badge on the sidebar button; the popup and this page keep full details',
   autoUpdate: 'Auto-update on button click',
-  autoUpdateDesc: 'When on, clicking the sidebar Update Copilot button immediately starts "Update all" if outdated plugins are found; the dsh core stays report-only',
+  autoUpdateDesc: 'When on, clicking the sidebar Update Copilot button immediately starts "Update all" if outdated plugins are found; the dsh core is never auto-updated (it updates only through an explicit confirm on its own card)',
   periodicRefresh: 'Refresh every 30 minutes',
   periodicRefreshDesc: 'Off by default: upstreams are queried at startup and on your actions only. When on, a forced refresh runs in the background every 30 minutes, and the badge and any open radar views follow along',
   progressPhase: '{phase}…',
@@ -709,6 +739,41 @@ function shortVer(v) {
   if (v === null || v === undefined) return '—'
   const s = String(v)
   return s.length === 40 ? s.slice(0, 7) : s
+}
+
+/**
+ * POST the DSH core update and resolve the outcome. Same SSE contract as
+ * plugin updates; `force` rides only as a literal true (downgrades and gate
+ * overrides need it — both server-checked).
+ */
+async function streamCoreUpdate(body, onEvent) {
+  const res = await fetch('/dsh-update-copilot/update-core', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ confirm: true, ...body }),
+    cache: 'no-store',
+  })
+  return consumeUpdateResponse(res, onEvent)
+}
+
+/**
+ * Dual-mode target choices for the core card, pure over the scan payload:
+ * the pinned newest version first, then one chip per dist-tag channel with
+ * its server-computed relation to the installed version. Exported through
+ * __test.
+ */
+function coreTargetChoices(core) {
+  const coreRow = core?.packages?.[0]
+  const current = typeof coreRow?.current === 'string' ? coreRow.current : null
+  const choices = []
+  if (typeof coreRow?.latest === 'string' && coreRow.latest !== '') {
+    choices.push({ key: 'pinned', kind: 'pinned', tag: null, version: coreRow.latest, relation: coreRow.updateAvailable ? 'upgrade' : (current !== null && coreRow.latest === current ? 'same' : 'downgrade') })
+  }
+  for (const row of core?.tags ?? []) {
+    if (typeof row?.tag !== 'string' || typeof row?.version !== 'string') continue
+    choices.push({ key: row.tag, kind: 'tag', tag: row.tag, version: row.version, relation: row.relation ?? 'upgrade' })
+  }
+  return choices
 }
 
 // The wire format is ISO-8601 UTC (toISOString on the host); render through
@@ -1987,27 +2052,78 @@ function CompatDetails({ t, findings }) {
       ...(Array.isArray(finding.removeCommands) ? finding.removeCommands.map((cmd) => h('code', { className: 'duc-cmd', key: cmd }, cmd)) : []))))
 }
 
-function CoreCard({ t, core, compat }) {
-  // Folded by default — the core is report-only and rarely actionable. The
+function CoreCard({ t, core, compat, onUpdated }) {
+  // Folded by default — the core card is dense and rarely actionable. The
   // stored flag keeps the user's explicit choice: '0' = unfolded on purpose.
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(NS_CORE_FOLDED) !== '0' } catch { return true }
   })
   const [copied, setCopied] = useState(false)
+  // Dual-mode selection: 'pinned' (default) or a dist-tag channel key.
+  const [mode, setMode] = useState('pinned')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+  const [progress, setProgress] = useState(null)
+  const [confirming, setConfirming] = useState(false)
+  const [forceConfirming, setForceConfirming] = useState(false)
+  const live = useLive()
+  const liveRunning = liveRunningOf(live)
   const coreRow = core.packages[0]
   const summary = compatSummary(compat)
+  const install = core.install ?? { method: 'unknown', writable: false, prefix: null }
+  const choices = coreTargetChoices(core)
+  const selected = choices.find((c) => c.key === mode) ?? choices[0] ?? null
+  const actionsDisabled = busy || liveRunning
+  // Execution needs a moving target, a global npm install, and write access
+  // to its prefix — every other shape stays copy-only (the server re-checks).
+  const executable = selected !== null && selected.relation !== 'same'
+    && install.method === 'global' && install.writable === true
+  const command = selected !== null ? `npm install -g @deepseek-ai/dsh@${selected.version}` : null
+
   function toggleCollapsed() {
     const next = !collapsed
     setCollapsed(next)
     try { localStorage.setItem(NS_CORE_FOLDED, next ? '1' : '0') } catch { /* storage unavailable */ }
   }
-  function copyCmd() {
-    navigator.clipboard?.writeText(core.updateCommand ?? '')
+  function copyCmd(text) {
+    navigator.clipboard?.writeText(text ?? '')
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
+  async function runCore(force = false) {
+    if (selected === null) return
+    if (!acquireMutation('core')) return
+    setBusy(true)
+    setResult(null)
+    setProgress({ percent: null, phase: 'start' })
+    try {
+      const outcome = await streamCoreUpdate({
+        mode: selected.kind === 'tag' ? 'tag' : 'pinned',
+        ...(selected.kind === 'tag' ? { tag: selected.tag } : {}),
+        // A deliberately chosen downgrade IS the intent: its second (red)
+        // confirm click rides force. Gate overrides use their own button.
+        ...(selected.relation === 'downgrade' || force === true ? { force: true } : {}),
+      }, (event) => {
+        if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
+        else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
+        else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
+      })
+      setResult(outcome)
+      if (outcome.ok && outcome.changed) await onUpdated?.(outcome)
+    } catch (e) {
+      setResult({ ok: false, error: String(e.message ?? e) })
+    } finally {
+      setBusy(false)
+      setConfirming(false)
+      setForceConfirming(false)
+      setProgress(null)
+      releaseMutation()
+    }
+  }
+
   const bundleRows = core.packages.slice(1)
   const visibleRows = collapsed ? core.packages.slice(0, 1) : core.packages
+  const rollback = rollbackOfResult(result)
   return h('div', { className: 'duc-card' },
     h('button', { type: 'button', className: 'duc-collapse-head', onClick: toggleCollapsed, 'aria-expanded': !collapsed },
       h('span', { className: 'duc-collapse-icon', 'aria-hidden': 'true' },
@@ -2032,12 +2148,64 @@ function CoreCard({ t, core, compat }) {
         p.updateAvailable ? shortVer(p.latest) : null),
       h('span', { className: `duc-badge ${p.updateAvailable ? 'behind' : (p.reached === false ? 'unknown' : 'ok')}` },
         p.updateAvailable ? t('coreBehind') : (p.reached === false ? t('cannotCheck') : t('coreCurrent'))))),
-    !collapsed && core.updateCommand !== null ? h('div', null,
-      h('div', { className: 'duc-note' }, t('corePolicy')),
+    !collapsed ? h('div', { className: 'duc-note' }, t('corePolicy')) : null,
+    !collapsed && selected !== null && command !== null ? h('div', null,
+      h('div', { className: 'duc-actions', style: { flexWrap: 'wrap' } },
+        choices.map((choice) => h('button', {
+          key: choice.key,
+          type: 'button',
+          className: `duc-btn${choice.key === selected.key ? ' primary' : ''}`,
+          onClick: () => { setMode(choice.key); setConfirming(false); setForceConfirming(false) },
+          title: `@deepseek-ai/dsh@${choice.version}`,
+        }, choice.kind === 'pinned'
+          ? `${t('coreModePinned')} ${shortVer(choice.version)}`
+          : `${t('coreModeTag', { tag: choice.tag, v: shortVer(choice.version) })}${choice.relation === 'downgrade' ? ` · ${t('coreTagDown')}` : (choice.relation === 'same' ? ` · ${t('coreTagSame')}` : '')}`)),
+      selected.relation === 'downgrade' ? h('div', { className: 'duc-banner warn' },
+        t('coreDowngradeWarn', {
+          tag: selected.kind === 'tag' ? selected.tag : t('coreModePinned'),
+          v: selected.version,
+          cur: coreRow?.current ?? '—',
+        })) : null,
+      selected.relation === 'same' ? h('div', { className: 'duc-note' }, t('coreTagSame')) : null,
       h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
-        h('code', { className: 'duc-cmd', style: { flex: 1 } }, core.updateCommand),
-        h('button', { className: 'duc-btn', onClick: copyCmd }, copied ? t('copied') : t('copyCmd')))) : null,
-    !collapsed && coreRow !== undefined && !coreRow.updateAvailable ? h('div', { className: 'duc-note' }, t('corePolicy')) : null,
+        h('code', { className: 'duc-cmd', style: { flex: 1 } }, command),
+        h('button', { className: 'duc-btn', onClick: () => copyCmd(command) }, copied ? t('copied') : t('copyCmd'))),
+      !executable ? h('div', { className: 'duc-note' },
+        selected.relation === 'same' ? null : t(install.method !== 'global' ? 'coreNoExec' : 'coreNotWritable', { method: install.method })) : h('div', { className: 'duc-actions' },
+        busy || liveRunning
+          ? h('button', { className: 'duc-btn', disabled: true, title: liveRunning ? t('liveBusy') : undefined }, t('coreUpdating'))
+          : h('button', {
+              className: `duc-btn primary${confirming ? ' danger' : ''}`,
+              onClick: () => (confirming ? runCore(false) : setConfirming(true)),
+              onBlur: () => setConfirming(false),
+              disabled: actionsDisabled,
+            }, confirming
+              ? (selected.relation === 'downgrade' ? t('coreConfirmDown') : t('coreConfirm'))
+              : t('coreUpdate')))),
+
+      progress !== null ? h('div', { className: 'duc-progress-wrap' },
+        h('div', { className: 'duc-progress' },
+          h('div', {
+            className: progress.percent === null ? 'duc-progress-fill duc-indet' : 'duc-progress-fill',
+            style: progress.percent === null ? undefined : { width: `${progress.percent}%` },
+          }))) : null,
+
+      result !== null ? h(UpdateResult, { t, result }) : null,
+      result !== null && result.ok && result.changed ? h('div', { className: 'duc-banner warn' },
+        `${t('coreUpdated', { v: result.after ?? '—' })} ${t('coreRestartHint', { cur: result.before ?? '—' })}`) : null,
+      result !== null && (result.code === 'preflight_blocked' || result.code === 'core_downgrade_blocked')
+        ? h('div', { className: 'duc-compat' },
+            h('div', { className: 'duc-note duc-error' }, t('coreExecBlocked')),
+            Array.isArray(result.blockers) && result.blockers.length > 0 ? h(CompatDetails, { t, findings: result.blockers }) : null,
+            actionsDisabled ? null : h('div', { className: 'duc-actions' },
+              h('button', {
+                className: `duc-btn ${forceConfirming ? 'danger' : ''}`,
+                onClick: () => (forceConfirming ? (setForceConfirming(false), runCore(true)) : setForceConfirming(true)),
+                onBlur: () => setForceConfirming(false),
+              }, forceConfirming ? t('confirmForce') : t('forceUpdate')))) : null,
+      rollback !== null && typeof rollback.command === 'string' && result !== null && result.ok && result.changed ? h('div', { className: 'duc-compat' },
+        h('div', { className: 'duc-note' }, t('coreRollbackCmd', { v: rollback.target })),
+        h('pre', { className: 'duc-cmd' }, rollback.command)) : null) : null,
     !collapsed && summary !== null && summary.current > 0 ? h('div', { className: 'duc-banner warn' },
       t('compatCurrent', { v: compat.current?.hostVersion ?? '—' }),
       h(CompatDetails, { t, findings: compat.current.findings })) : null,
@@ -2426,7 +2594,7 @@ function CopilotSection({ t }) {
       h(BadgePrefRow, { t }),
       h(AutoUpdatePrefRow, { t }),
       h(PeriodicRefreshPrefRow, { t })),
-    status !== null ? h(CoreCard, { t, core: status.core, compat: status.compat }) : null,
+    status !== null ? h(CoreCard, { t, core: status.core, compat: status.compat, onUpdated: notifyUpdated }) : null,
     status !== null && status.plugins.length > 0
       ? h('div', { className: 'duc-profiles-hint' }, t('profilesHint'))
       : null,
@@ -2665,7 +2833,7 @@ function PopupBody({ t, autoRun = false }) {
     needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
     error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error}`) : null,
     status === null && error === null ? h('div', { className: 'duc-note' }, t('loading')) : null,
-    status !== null ? h(CoreCard, { t, core: status.core, compat: status.compat }) : null,
+    status !== null ? h(CoreCard, { t, core: status.core, compat: status.compat, onUpdated: notifyUpdated }) : null,
     status !== null
       ? h(PluginListCard, {
           t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated,
@@ -2751,6 +2919,7 @@ exports.__test = {
   // Render seam: hands back the element for one plugin row so a test can walk
   // it and drive the shipped handlers (see test/row-update-click.test.mjs).
   pluginRowElement: (props) => h(PluginRow, props),
+  coreCardElement: (props) => h(CoreCard, props),
   autoTargetsOf,
   quickOutcome,
   loadBadgeStatus,
@@ -2784,6 +2953,8 @@ exports.__test = {
   rowPeerWarnings,
   updateWarnings,
   rollbackOfResult,
+  coreTargetChoices,
+  streamCoreUpdate,
 }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web
 // composition) already hard-depends on them.

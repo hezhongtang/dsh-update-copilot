@@ -16,7 +16,8 @@ export function loadBundle() {
       // Descriptors (not bare {}) so a test can walk the element tree the
       // bundle returns and drive real handlers (see row-update-click.test.mjs).
       if (key === 'createElement') return (type, props, ...children) => ({ type, props: props ?? {}, children })
-      if (key === 'useState') return (initial) => [initial, () => {}]
+      // Lazy initializers (useState(() => …)) evaluate once, like React.
+      if (key === 'useState') return (initial) => [typeof initial === 'function' ? initial() : initial, () => {}]
       if (key === 'useEffect') return (effect) => { try { effect?.() } catch { /* ignore */ } return undefined }
       if (key === 'useCallback') return (fn) => fn
       if (key === 'useRef') return () => ({ current: null })
