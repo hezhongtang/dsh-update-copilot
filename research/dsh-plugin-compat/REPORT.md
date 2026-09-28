@@ -58,6 +58,10 @@ GitHub Releases 使用 `dsh-vX.Y.Z-*` 标签且全部标 Pre-release；**无独�
 
 更早的高破坏窗是 **0.1.2 → 0.1.5**：包级移除/改名（`dsh-host-apiproxy`、`dsh-client-store`/`ui-primitives`/`ui-slots`）、`code`→`ptc`、session format V2→V3（只向前）[20][54]。
 
+### 1.4 实测补记：0.1.7-rc.2 的 llm-deepseek 拆名事故（2026-09-28）
+
+升级到 `0.1.7-rc.2` 时 `dsh-base` 把插件 `@deepseek-ai/dsh-llm-deepseek` 拆名为 `@deepseek-ai/dsh-llm-deepseek-api-key`（API-key 认证独立成包），并新增 `llm-deepseek-account` 条目。补丁装载器对 `cordis.patch.yml` 条目做**严格 name 校验**：`- id:` 块内 `name:` 钉住旧包名时，整条补丁连同 config 被**静默跳过**（B 面的 mount-time 形态）；唯一信号是启动时一行 stderr——`patch: name mismatch for "llm-deepseek" (expected "@deepseek-ai/dsh-llm-deepseek-api-key", got "@deepseek-ai/dsh-llm-deepseek"), skipping`。手动排查：`dsh --profile <name> --dump-config 2>&1 >/dev/null | grep "mismatch\|not found"`。修复二选一：把 `name:` 改成新包名，或删掉 `name:` 行改按 id 匹配。
+
 ---
 
 ## 2. 兼容破坏面：五类问题与故障形态
