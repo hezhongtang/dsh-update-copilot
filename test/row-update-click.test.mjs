@@ -101,7 +101,6 @@ function renderRow(__test) {
   const element = __test.pluginRowElement({
     t: (key) => key,
     row: ROW,
-    categories: [],
     onUpdated: async () => {},
     mountedChildren: [],
   })

@@ -71,13 +71,12 @@ test('different packages stay separate and sort by name', () => {
   assert.deepEqual(plugins.map((p) => p.name), ['alpha', 'middle', 'zeta'])
 })
 
-test('category and repo metadata are merged from the first available row', () => {
+test('repo metadata is merged from the first available row', () => {
   const plugins = aggregateRows([
-    { profile: 'web', plugins: [row({ name: 'ui-tool', category: 'ui', repo: 'owner/repo', repoUrl: 'https://github.com/owner/repo' })] },
+    { profile: 'web', plugins: [row({ name: 'ui-tool', repo: 'owner/repo', repoUrl: 'https://github.com/owner/repo' })] },
     { profile: 'headless', plugins: [row({ name: 'ui-tool', kind: 'github' })] },
   ])
   const agg = plugins[0]
-  assert.equal(agg.category, 'ui')
   assert.equal(agg.repo, 'owner/repo')
   assert.equal(agg.repoUrl, 'https://github.com/owner/repo')
   assert.equal(agg.official, false)
@@ -103,14 +102,14 @@ function assertNoUndefined(value, path = '$') {
 
 test('aggregated rows stay lossless-JSON safe (no explicit undefined)', () => {
   const plugins = aggregateRows([
-    { profile: 'web', plugins: [row({ name: 'no-labels' }), row({ name: 'labeled', category: 'ui', repo: 'owner/repo' })] },
+    { profile: 'web', plugins: [row({ name: 'no-labels' }), row({ name: 'labeled', repo: 'owner/repo' })] },
     { profile: 'headless', plugins: [row({ name: 'no-labels', kind: 'github' })] },
   ])
   const noLabels = plugins.find((p) => p.name === 'no-labels')
   assert.equal('category' in noLabels, false) // absent, never an undefined value
   assertNoUndefined(noLabels)
   const labeled = plugins.find((p) => p.name === 'labeled')
-  assert.equal(labeled.category, 'ui') // labels still merge when present
+  assert.equal(labeled.repo, 'owner/repo') // metadata still merges when present
   assertNoUndefined(labeled)
 })
 

@@ -67,7 +67,6 @@ const zh = {
   coreRestartHint: '当前进程仍运行旧版 {cur} —— 重启 dsh（如 dsh web）后新版本才生效。',
   coreRollbackCmd: '回滚命令（重装 {v}）',
   pluginsTitle: '插件（跨 profile 合并）',
-  profilesHint: '同一插件可能装在多个 profile（web / headless / desktop…）；这里按包名合并展示，只更新具有独立更新资格的 profile。',
   noPlugins: '没有任何插件依赖',
   mountedBy: '由 {name} 挂载（独立）',
   mounts: '挂载独立插件：{names}',
@@ -123,13 +122,8 @@ const zh = {
   quickDone: '✓ 已更新',
   quickFailed: '✗ {n} 失败',
   quickNone: '已是最新',
-  prefsTitle: '偏好设置',
-  hideBadge: '隐藏更新红点',
-  hideBadgeDesc: '关闭侧栏按钮上的「可更新数量」徽章；弹窗与本页仍会显示完整信息',
   autoUpdate: '点击按钮时自动更新',
   autoUpdateDesc: '开启后，点击侧栏「更新助手」按钮时若发现有落后的插件，立即自动开始「一键更新全部」；dsh 本体不会自动更新（仅可通过本体卡片手动确认执行）',
-  periodicRefresh: '每 30 分钟自动刷新',
-  periodicRefreshDesc: '默认关闭：上游只在启动时和你的操作时被查询。开启后，每 30 分钟在后台强制刷新一次，徽章与打开的雷达视图自动跟进',
   progressPhase: '{phase}…',
   progress_start: '开始更新',
   progress_waiting: '等待服务端完成…（旧版服务端，无实时进度）',
@@ -216,7 +210,6 @@ const en = {
   coreRestartHint: 'This process still runs the old {cur} — restart dsh (e.g. dsh web) for the new version to take effect.',
   coreRollbackCmd: 'Rollback command (reinstall {v})',
   pluginsTitle: 'Plugins (merged across profiles)',
-  profilesHint: 'A package may be installed in several profiles (web / headless / desktop…). Rows are merged by package name; Update targets only profiles eligible for an independent update.',
   noPlugins: 'No plugin dependencies installed',
   mountedBy: 'Mounted by {name} (independent)',
   mounts: 'Mounts independent plugins: {names}',
@@ -272,13 +265,8 @@ const en = {
   quickDone: '✓ Updated',
   quickFailed: '✗ {n} failed',
   quickNone: 'Up to date',
-  prefsTitle: 'Preferences',
-  hideBadge: 'Hide update badge',
-  hideBadgeDesc: 'Turn off the update-count badge on the sidebar button; the popup and this page keep full details',
   autoUpdate: 'Auto-update on button click',
   autoUpdateDesc: 'When on, clicking the sidebar Update Copilot button immediately starts "Update all" if outdated plugins are found; the dsh core is never auto-updated (it updates only through an explicit confirm on its own card)',
-  periodicRefresh: 'Refresh every 30 minutes',
-  periodicRefreshDesc: 'Off by default: upstreams are queried at startup and on your actions only. When on, a forced refresh runs in the background every 30 minutes, and the badge and any open radar views follow along',
   progressPhase: '{phase}…',
   progress_start: 'Starting update',
   progress_waiting: 'Waiting for the server… (older server, no live progress)',
@@ -374,7 +362,6 @@ function injectStyles() {
     '.duc-mounted-group{margin:0 0 0 10px;padding-left:10px;border-left:2px solid rgba(80,140,255,.35)}',
     '.duc-mounted-group .duc-row{padding:5px 0}',
     '.duc-chip{font-size:11px;border:1px solid rgba(127,127,127,.4);border-radius:4px;padding:0 5px;opacity:.85}',
-    '.duc-chip.duc-cat{opacity:.6;border-style:dashed}',
     '.duc-ver{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}',
     '.duc-arrow{opacity:.6}',
     '.duc-badge{font-size:11px;border-radius:4px;padding:1px 7px}',
@@ -663,98 +650,15 @@ function fmtClock(iso) {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
-
-// ---------------------------------------------------------------------------
-// Settings nav icon patch.
-//
-// The settings shell derives every section's nav glyph from a hardcoded id
-// map (models / agent-presets / plugins); every other section falls back to
-// the generic gear. The settings.section registration contract has no icon
-// field, so a registrant cannot supply one through the slot. This patch
-// swaps the gear inside OUR nav cell for the same radar SVG the sidebar
-// trigger uses, so both entrances carry one mark. It is label-matched,
-// idempotent, and disconnected with the plugin. The durable fix is an
-// upstream `icon` option on settings.section registrations.
-// ---------------------------------------------------------------------------
-
-const NAV_LABELS = [zh.nav, en.nav]
-const SVG_NS = 'http://www.w3.org/2000/svg'
-
-function radarSvgElement(className) {
-  const svg = document.createElementNS(SVG_NS, 'svg')
-  svg.setAttribute('viewBox', '0 0 16 16')
-  svg.setAttribute('width', '16')
-  svg.setAttribute('height', '16')
-  svg.setAttribute('aria-hidden', 'true')
-  svg.setAttribute('fill', 'none')
-  if (className !== null && className.length > 0) svg.setAttribute('class', className)
-  svg.setAttribute('data-duc', 'nav-radar')
-  const outer = document.createElementNS(SVG_NS, 'circle')
-  outer.setAttribute('cx', '8'); outer.setAttribute('cy', '8'); outer.setAttribute('r', '6.2')
-  outer.setAttribute('stroke', 'currentColor'); outer.setAttribute('stroke-width', '1.1')
-  const inner = document.createElementNS(SVG_NS, 'circle')
-  inner.setAttribute('cx', '8'); inner.setAttribute('cy', '8'); inner.setAttribute('r', '3')
-  inner.setAttribute('stroke', 'currentColor'); inner.setAttribute('stroke-width', '.9'); inner.setAttribute('opacity', '.5')
-  const beam = document.createElementNS(SVG_NS, 'path')
-  beam.setAttribute('d', 'M8 8 L12.2 3.8')
-  beam.setAttribute('stroke', 'currentColor'); beam.setAttribute('stroke-width', '1.1'); beam.setAttribute('stroke-linecap', 'round')
-  svg.append(outer, inner, beam)
-  return svg
-}
-
-function patchSettingsNavIcons() {
-  // The shipped settings panel is the dialog that owns a <nav>; ours (.duc-modal) is not.
-  const dialogs = document.querySelectorAll('div[role="dialog"][aria-modal="true"]:not(.duc-modal)')
-  for (const dialog of dialogs) {
-    for (const btn of dialog.querySelectorAll('nav button')) {
-      const label = (btn.textContent ?? '').trim()
-      if (!NAV_LABELS.includes(label)) continue
-      const gear = btn.firstElementChild
-      if (gear === null || gear.tagName.toLowerCase() !== 'svg' || gear.hasAttribute('data-duc')) continue
-      btn.replaceChild(radarSvgElement(gear.getAttribute('class')), gear)
-    }
-  }
-}
-
-/** Observe body; re-patch whenever the settings panel (re)mounts. */
-function mountSettingsNavIconPatch() {
-  if (typeof MutationObserver === 'undefined' || typeof document === 'undefined' || document.body === null) {
-    return () => {}
-  }
-  const observer = new MutationObserver((mutations) => {
-    if (mutations.some((m) => m.addedNodes.length > 0)) patchSettingsNavIcons()
-  })
-  observer.observe(document.body, { childList: true, subtree: true })
-  patchSettingsNavIcons()
-  return () => observer.disconnect()
-}
-
 // ---------------------------------------------------------------------------
 // Shared cross-seat UI state: popup open flag + the badge summary.
 // useSyncExternalStore contract: immutable snapshots, notify on replace.
 // ---------------------------------------------------------------------------
 
-/** Badge preference, per browser (localStorage — remote browsers keep it too). */
-const BADGE_PREF_KEY = 'duc.hideBadge'
-
-function readBadgePref() {
-  try {
-    return typeof localStorage !== 'undefined' && localStorage.getItem(BADGE_PREF_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-function writeBadgePref(hidden) {
-  try {
-    localStorage.setItem(BADGE_PREF_KEY, hidden ? '1' : '0')
-  } catch { /* storage unavailable — in-memory only */ }
-}
-
 /**
- * Auto-update preference, same per-browser storage as the badge toggle. Off by
- * default: updates still start only after an explicit click, the option just
- * makes that one click on the sidebar trigger also mean "run Update all".
+ * Auto-update preference, per-browser localStorage. Off by default: updates
+ * still start only after an explicit click, the option just makes that one
+ * click on the sidebar trigger also mean "run Update all".
  */
 const AUTO_PREF_KEY = 'duc.autoUpdate'
 
@@ -772,35 +676,7 @@ function writeAutoUpdatePref(on) {
   } catch { /* storage unavailable — in-memory only */ }
 }
 
-/**
- * Periodic refresh preference, same per-browser storage as the other toggles.
- * Off by default: upstreams are touched at startup and on user action; only
- * an explicit opt-in schedules a forced refresh every 30 minutes.
- */
-const PERIODIC_PREF_KEY = 'duc.periodicRefresh'
-const PERIODIC_REFRESH_MS = 30 * 60 * 1000
-
-function readPeriodicRefreshPref() {
-  try {
-    return typeof localStorage !== 'undefined' && localStorage.getItem(PERIODIC_PREF_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-function writePeriodicRefreshPref(on) {
-  try {
-    localStorage.setItem(PERIODIC_PREF_KEY, on ? '1' : '0')
-  } catch { /* storage unavailable — in-memory only */ }
-}
-
-/** Toggle the periodic refresh option; persists like the badge toggle. */
-function setPeriodicRefresh(on) {
-  writePeriodicRefreshPref(on)
-  setUi({ periodicRefresh: on === true })
-}
-
-let uiState = { open: false, opener: null, summary: null, generatedAt: null, hideBadge: readBadgePref(), autoUpdate: readAutoUpdatePref(), periodicRefresh: readPeriodicRefreshPref(), refreshTick: 0, autoRunAll: false, operation: null }
+let uiState = { open: false, opener: null, summary: null, generatedAt: null, autoUpdate: readAutoUpdatePref(), autoRunAll: false, operation: null }
 const uiSubs = new Set()
 
 function setUi(patch) {
@@ -808,13 +684,7 @@ function setUi(patch) {
   for (const notify of uiSubs) notify()
 }
 
-/** Toggle the sidebar badge; persists across sessions per browser. */
-function setHideBadge(hidden) {
-  writeBadgePref(hidden)
-  setUi({ hideBadge: hidden })
-}
-
-/** Toggle the click-to-auto-update option; persists like the badge toggle. */
+/** Toggle the click-to-auto-update option; persists per browser. */
 function setAutoUpdate(on) {
   writeAutoUpdatePref(on)
   setUi({ autoUpdate: on === true })
@@ -1186,17 +1056,6 @@ function useCopilotData(active) {
 
   useEffect(() => { if (active) load(false) }, [active, load])
 
-  // Opt-in periodic refresh: the sidebar seat advances refreshTick every 30
-  // minutes while the preference is on; open radar seats reload here. The
-  // ref keeps the tick the seat mounted with from forcing an extra load.
-  const ui = useUi()
-  const lastRefreshTick = useRef(ui.refreshTick)
-  useEffect(() => {
-    if (ui.refreshTick === lastRefreshTick.current) return
-    lastRefreshTick.current = ui.refreshTick
-    load(true)
-  }, [ui.refreshTick, load])
-
   const notifyUpdated = useCallback((outcome = null) => {
     if (outcome === null || outcome.requiresRestart !== false) setNeedRestart(true)
     // Stamp the external-completion throttle: the live poller will also see
@@ -1243,22 +1102,6 @@ function Chevron({ open }) {
   }
   return h('span', { className: 'duc-chevron-fallback' }, open ? '▾' : '▸')
 }
-
-/**
- * Category label borrowed from the dsh-market registry, when the server
- * resolved one. `categories` is the registry's `{ key: { en, zh } }` map; the
- * label follows the current UI language (html lang attribute).
- */
-function CategoryChip({ category, categories }) {
-  if (category === null || category === undefined) return null
-  const meta = categories !== null && categories !== undefined ? categories[category] : undefined
-  if (meta === null || meta === undefined) return null
-  const lang = (typeof document !== 'undefined' ? document.documentElement.lang : '') || ''
-  const label = lang.startsWith('zh') ? (meta.zh ?? meta.en) : (meta.en ?? meta.zh)
-  if (typeof label !== 'string' || label === '') return null
-  return h('span', { className: 'duc-chip duc-cat' }, label)
-}
-
 
 /**
  * Compact ↗ outlink for one row. Prefers the host-resolved repoUrl (it may
@@ -1505,7 +1348,7 @@ function mountRelationshipInfo(row) {
   return { mountedBy, mounts }
 }
 
-function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refreshing = false, mountedChildren = [], onRunBundle }) {
+function PluginRow({ t, row, onUpdated, bulkRunning = false, refreshing = false, mountedChildren = [], onRunBundle }) {
   const ui = useUi()
   const [mountedOpen, setMountedOpen] = useState(false)
   const [rollbackConfirming, setRollbackConfirming] = useState(false)
@@ -1622,7 +1465,6 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
         'aria-label': t(mountedOpen ? 'hideMounted' : 'showMounted', { name: row.name }),
         title: t(mountedOpen ? 'hideMounted' : 'showMounted', { name: row.name }),
       }, h('span', { 'aria-hidden': 'true' }, h(Chevron, { open: mountedOpen }))) : null,
-      h(CategoryChip, { category: row.category, categories }),
       mountInfo.mountedBy.map((parent) => h('span', { className: 'duc-chip duc-mount-chip', key: parent },
         t('mountedBy', { name: parent }))),
       h('span', { className: 'duc-ver' },
@@ -1700,7 +1542,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
     availReasons ? h('div', { className: 'duc-note' }, availReasons) : null,
     hasMounted && mountedOpen ? h('div', { className: 'duc-mounted-group' },
       mountedChildren.map((child) => h(PluginRow, {
-        t, row: child.row, categories, key: child.row.name, onUpdated, bulkRunning, refreshing,
+        t, row: child.row, key: child.row.name, onUpdated, bulkRunning, refreshing,
         mountedChildren: child.children, onRunBundle,
       }))) : null,
     )
@@ -1972,11 +1814,11 @@ function nodeIsBehind(node) {
     || node.children.some(nodeIsBehind)
 }
 
-function PluginListCard({ t, plugins, categories, onUpdated, bulkRunning = false, bundleRunning = false, refreshing = false, onRunBundle }) {
+function PluginListCard({ t, plugins, onUpdated, bulkRunning = false, bundleRunning = false, refreshing = false, onRunBundle }) {
   const [showOk, setShowOk] = useState(false)
   const groups = partitionPluginGroups(plugins)
   const renderGroups = (items) => items.map(({ parent, mountedChildren }) => h(PluginRow, {
-    t, row: parent, categories, key: parent.name, onUpdated,
+    t, row: parent, key: parent.name, onUpdated,
     bulkRunning: bulkRunning || bundleRunning, refreshing, mountedChildren, onRunBundle,
   }))
 
@@ -2167,24 +2009,10 @@ function LogTail({ t, opsVersion }) {
 }
 
 // ---------------------------------------------------------------------------
-// Seat 1: the Settings section (full page).
+// Preferences (rendered inside the popup).
 // ---------------------------------------------------------------------------
 
-/** The badge visibility preference row for the settings page. */
-function BadgePrefRow({ t }) {
-  const ui = useUi()
-  return h('label', { className: 'duc-pref' },
-    h('input', {
-      type: 'checkbox',
-      checked: ui.hideBadge === true,
-      onChange: (e) => setHideBadge(e.target.checked),
-    }),
-    h('span', { className: 'duc-pref-body' },
-      h('span', { style: { fontWeight: 500 } }, t('hideBadge')),
-      h('span', { className: 'duc-note' }, t('hideBadgeDesc'))))
-}
-
-/** The click-to-auto-update preference row for the settings page. */
+/** The click-to-auto-update preference row. */
 function AutoUpdatePrefRow({ t }) {
   const ui = useUi()
   return h('label', { className: 'duc-pref' },
@@ -2196,20 +2024,6 @@ function AutoUpdatePrefRow({ t }) {
     h('span', { className: 'duc-pref-body' },
       h('span', { style: { fontWeight: 500 } }, t('autoUpdate')),
       h('span', { className: 'duc-note' }, t('autoUpdateDesc'))))
-}
-
-/** The opt-in 30-minute periodic refresh preference row. */
-function PeriodicRefreshPrefRow({ t }) {
-  const ui = useUi()
-  return h('label', { className: 'duc-pref' },
-    h('input', {
-      type: 'checkbox',
-      checked: ui.periodicRefresh === true,
-      onChange: (e) => setPeriodicRefresh(e.target.checked),
-    }),
-    h('span', { className: 'duc-pref-body' },
-      h('span', { style: { fontWeight: 500 } }, t('periodicRefresh')),
-      h('span', { className: 'duc-note' }, t('periodicRefreshDesc'))))
 }
 
 function AvailabilityBanners({ t, status }) {
@@ -2250,69 +2064,6 @@ function PatchAuditBanner({ t, findings }) {
     }, `dsh --profile ${profile} --dump-config 2>&1 >/dev/null | grep "mismatch\\|not found"`)))
 }
 
-function CopilotSection({ t }) {
-  const { status, error, busy, load, needRestart, opsVersion, notifyUpdated } = useCopilotData(true)
-  const { bulk, bulkResult, runAll } = useBulkUpdate()
-  const live = useLive()
-  const liveRunning = liveRunningOf(live)
-  useLiveCompletionRefresh(load)
-  const { bundle, bundleResult, runBundle } = useBundleUpdate()
-  const ui = useUi()
-
-  useEffect(() => { injectStyles() }, [])
-
-  async function onRunAll(plugins) {
-    await runAll(plugins, notifyUpdated)
-  }
-
-  async function onRunBundle(parent, mountedChildren) {
-    await runBundle(parent, mountedChildren, notifyUpdated)
-  }
-
-  return h('div', { className: 'duc' },
-    h('div', { className: 'duc-head' },
-      h('h2', null, t('nav')),
-      h('span', { className: 'duc-sub' }, t('subtitle')),
-      status !== null ? h('span', { className: 'duc-meta' },
-        `${t('lastScan')}: ${fmtClock(status.generatedAt)}`,
-        h('button', { className: 'duc-btn', onClick: () => load(true), disabled: busy || ui.operation !== null },
-          busy ? t('rescanning') : t('refresh'))) : null,
-      status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, liveRunning, blocked: bundle.running || busy || ui.operation !== null }) : null),
-    h(LiveBanner, { t }),
-    h(AvailabilityBanners, { t, status }),
-    h(PatchAuditBanner, { t, findings: status?.patchAudit }),
-    bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
-      `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
-    // A pass started elsewhere (the sidebar quick button) still lands its
-    // restart requirement here — the local needRestart flag only tracks this
-    // seat's own runs; skip when this seat already shows it.
-    bulkResult !== null && !bulk.running && bulkResult.requiresRestart === true && needRestart !== true
-      ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`)
-      : null,
-    bundle.running ? h('div', { className: 'duc-bulk-progress', title: t('updatingBundle', bundle) }, t('updatingBundle', bundle)) : null,
-    bundleResult !== null && !bundle.running ? h(BundleUpdateResult, { t, result: bundleResult }) : null,
-    error !== null ? h('div', { className: 'duc-error' }, `${t('loadFail')}: ${error} `,
-      h('button', { className: 'duc-btn', onClick: () => load(false) }, t('retry'))) : null,
-    needRestart ? h('div', { className: 'duc-banner' }, `ℹ️ ${t('restartHint')}`) : null,
-    status === null && error === null ? h('div', { className: 'duc-note' }, t('loading')) : null,
-    h('div', { className: 'duc-card', style: { padding: '10px 12px' } },
-      h('div', { className: 'duc-card-title' }, t('prefsTitle')),
-      h(BadgePrefRow, { t }),
-      h(AutoUpdatePrefRow, { t }),
-      h(PeriodicRefreshPrefRow, { t })),
-    status !== null ? h(CoreCard, { t, core: status.core, compat: status.compat, onUpdated: notifyUpdated }) : null,
-    status !== null && status.plugins.length > 0
-      ? h('div', { className: 'duc-profiles-hint' }, t('profilesHint'))
-      : null,
-    status !== null
-      ? h(PluginListCard, {
-          t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated,
-          bulkRunning: bulk.running, bundleRunning: bundle.running, refreshing: busy || ui.operation !== null, onRunBundle,
-        })
-      : null,
-    h(LogTail, { t, opsVersion }))
-}
-
 // ---------------------------------------------------------------------------
 // Seat 2: the sidebar foot trigger with the lazy badge + one-click quick
 // update. ONE slot entry carries both buttons (the shell flexes entries in one
@@ -2344,17 +2095,6 @@ function FootTrigger({ t, wide }) {
       clearTimeout(retry)
     }
   }, [])
-  // Opt-in periodic refresh (Settings → Update Copilot): while enabled, one
-  // interval per page forces a scan every 30 minutes — this seat re-hydrates
-  // the badge, and the refreshTick tells open radar seats to reload too.
-  useEffect(() => {
-    if (ui.periodicRefresh !== true) return undefined
-    const id = setInterval(() => {
-      loadBadgeStatus(true).catch(() => {})
-      setUi({ refreshTick: uiState.refreshTick + 1 })
-    }, PERIODIC_REFRESH_MS)
-    return () => clearInterval(id)
-  }, [ui.periodicRefresh])
   // Terminal feedback lives 4 seconds, then the button returns to idle.
   useEffect(() => {
     if (quick === null || quick.phase === 'loading') return undefined
@@ -2369,7 +2109,7 @@ function FootTrigger({ t, wide }) {
   const liveName = liveRunning && live.current !== null && live.current !== undefined
     ? live.current.name
     : null
-  const showBadge = behind > 0 && ui.hideBadge !== true
+  const showBadge = behind > 0
   // Quick button state: this seat's pass (queue), any live update (agent
   // tools / another tab), or the pre-pass scan read. The queue owns the
   // numeric readout; a foreign live update shows a spinner only.
@@ -2486,7 +2226,7 @@ function FootTrigger({ t, wide }) {
  * the toolbar button, progress visible in this very popup.
  */
 function PopupBody({ t, autoRun = false }) {
-  const { status, error, busy, load, needRestart, notifyUpdated } = useCopilotData(true)
+  const { status, error, busy, load, needRestart, opsVersion, notifyUpdated } = useCopilotData(true)
   const { bulk, bulkResult, runAll } = useBulkUpdate()
   const live = useLive()
   const liveRunning = liveRunningOf(live)
@@ -2543,10 +2283,12 @@ function PopupBody({ t, autoRun = false }) {
     status !== null ? h(CoreCard, { t, core: status.core, compat: status.compat, onUpdated: notifyUpdated }) : null,
     status !== null
       ? h(PluginListCard, {
-          t, plugins: status.plugins, categories: status.categories, onUpdated: notifyUpdated,
+          t, plugins: status.plugins, onUpdated: notifyUpdated,
           bulkRunning: bulk.running, bundleRunning: bundle.running, refreshing: busy || ui.operation !== null, onRunBundle,
         })
-      : null)
+      : null,
+    h(AutoUpdatePrefRow, { t }),
+    h(LogTail, { t, opsVersion }))
 }
 
 function trapModalFocus(modal, event, activeElement = document.activeElement) {
@@ -2672,15 +2414,6 @@ exports.apply = function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-update-copilot: dictionaries')
   const t = ctx.locale.bind(NS)
 
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: 'update-copilot',
-    order: 41,
-    label: () => t('nav'),
-    locale: NS,
-    inject: () => ({ t }),
-  }, () => h(CopilotSection, { t })))
-
   // Beside Settings at the sidebar foot; the shell hands each occupant { wide }.
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
     name: 'sidebar.footer.action',
@@ -2698,54 +2431,6 @@ exports.apply = function apply(ctx) {
     order: 50,
     label: () => 'dsh-update-copilot',
   }, () => h(CopilotOverlay, { t })))
-
-  // Settings nav: swap our row's fallback gear for the radar mark.
-  ctx.effect(() => mountSettingsNavIconPatch(), 'dsh-update-copilot: settings nav icon patch')
-
-  // Visual-test hooks: `?duc=1` auto-opens the popup once (also arms the
-  // badge); `?duc=badge` arms the badge only — no popup, no backdrop, so a
-  // screenshot can judge the badge/text alignment on the sidebar itself
-  // (`&hide=1` arms it with the badge suppressed); `?duc=settings` clicks the
-  // shipped settings trigger once the sidebar is up and then selects our nav
-  // row, so the section page (pref row included) is screenshot-visible.
-  ctx.effect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search)
-      const mode = params.get('duc')
-      if (mode === '1') {
-        setUi({ open: true })
-      } else if (mode === 'badge') {
-        if (params.get('hide') === '1') setUi({ hideBadge: true })
-        loadBadgeStatus().catch(() => {})
-      } else if (mode === 'settings') {
-        let tries = 0
-        let selectedUs = false
-        const timer = setInterval(() => {
-          tries += 1
-          if (!selectedUs) {
-            const trigger = document.querySelector('button[aria-haspopup="dialog"]:not(.duc-foot-btn)')
-            if (trigger !== null) {
-              trigger.click()
-              selectedUs = true
-            }
-          } else {
-            const navBtns = document.querySelectorAll('div[role="dialog"][aria-modal="true"]:not(.duc-modal) nav button')
-            let ours = null
-            for (const btn of navBtns) {
-              if (NAV_LABELS.includes((btn.textContent ?? '').trim())) { ours = btn; break }
-            }
-            if (ours !== null) {
-              ours.click()
-              clearInterval(timer)
-            }
-          }
-          if (tries > 40) clearInterval(timer)
-        }, 250)
-        return () => clearInterval(timer)
-      }
-    } catch { /* no window.location — ignore */ }
-    return () => {}
-  }, 'dsh-update-copilot: popup deep-link')
 }
 
 return module.exports; } });
