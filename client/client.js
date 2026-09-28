@@ -235,6 +235,10 @@ const zh = {
   peerRoleCurrent: '当前',
   peerRoleTarget: '目标',
   updateWarnings: '更新预检预警',
+  patchAuditTitle: '补丁名体检：{n} 条 cordis.patch.yml 条目钉住的包名已不存在，被装载器整条静默跳过（配置一并失效）',
+  patchAuditLine: '{profile} · {id} → {name}',
+  patchAuditFix: '修复：把该条目的 name 改为当前包名，或删除 name 行改为按 id 匹配（两种方式都已验证有效）',
+  patchAuditVerify: '验证命令（无输出即已修复）：',
 }
 
 const en = {
@@ -434,6 +438,10 @@ const en = {
   peerRoleCurrent: 'current',
   peerRoleTarget: 'target',
   updateWarnings: 'Pre-flight warnings',
+  patchAuditTitle: 'Patch-name check: {n} cordis.patch.yml entr(ies) pin package names that no longer exist — the loader silently skips them (config included)',
+  patchAuditLine: '{profile} · {id} → {name}',
+  patchAuditFix: 'Fix: change the entry\'s name to the current package name, or delete the name line so it matches by id (both verified to work)',
+  patchAuditVerify: 'Verify (no output means fixed):',
 }
 
 const DUC_STYLES_ID = 'duc-styles'
@@ -1622,14 +1630,17 @@ function UpdateWarnings({ t, result }) {
   return h('div', { className: 'duc-compat' },
     h('div', { className: 'duc-note' }, t('updateWarnings')),
     warnings.map((warning, index) => h('div', { key: `${warning.type ?? 'w'}:${warning.specifier ?? warning.line ?? ''}:${warning.against ?? ''}:${index}`, className: 'duc-note' },
-      warning.type === 'breaking'
-        ? warning.message
-        : t('peerWarnDetail', {
+      // Peer-range warnings carry a structured `range` and keep their formatted
+      // line; every other shape renders its message verbatim (breaking markers
+      // already did), so new server-side warning shapes need no client change.
+      warning.range !== undefined || typeof warning.message !== 'string'
+        ? t('peerWarnDetail', {
             specifier: warning.specifier ?? '',
             range: warning.range ?? '',
             role: t(warning.against === 'target' ? 'peerRoleTarget' : 'peerRoleCurrent'),
             version: warning.version ?? '',
-          }))))
+          })
+        : warning.message)))
 }
 
 function UpdateResult({ t, result }) {
@@ -2545,6 +2556,33 @@ function AvailabilityBanners({ t, status }) {
       t('availUnreachable', { sources: unreachable.sources.join(', ') || String(unreachable.unreachable) })) : null)
 }
 
+/**
+ * The patch-name audit banner: cordis.patch.yml entries whose pinned `name`
+ * the dsh loader can no longer resolve are skipped silently — config and all
+ * (e.g. the 0.1.7-rc.2 dsh-llm-deepseek → dsh-llm-deepseek-api-key rename).
+ * One line per finding above the plugin list, plus the copy-ready verify
+ * command per affected profile: after fixing the name (or dropping it to
+ * match by id), an empty grep means the loader accepts the patch again.
+ */
+function PatchAuditBanner({ t, findings }) {
+  if (!Array.isArray(findings) || findings.length === 0) return null
+  const profiles = []
+  for (const finding of findings) {
+    if (!profiles.includes(finding.profile)) profiles.push(finding.profile)
+  }
+  return h('div', { className: 'duc-banner warn' },
+    h('div', { style: { fontWeight: 600 } }, t('patchAuditTitle', { n: findings.length })),
+    findings.map((finding, index) => h('div', { key: `${finding.profile}:${finding.id}:${index}` },
+      t('patchAuditLine', { profile: finding.profile, id: finding.id, name: finding.pinnedName }))),
+    h('div', null, t('patchAuditFix')),
+    h('div', { className: 'duc-note' }, t('patchAuditVerify')),
+    profiles.map((profile) => h('code', {
+      className: 'duc-cmd',
+      key: `verify:${profile}`,
+      style: { display: 'block', marginTop: '4px' },
+    }, `dsh --profile ${profile} --dump-config 2>&1 >/dev/null | grep "mismatch\\|not found"`)))
+}
+
 function CopilotSection({ t }) {
   const { status, error, busy, load, needRestart, opsVersion, notifyUpdated } = useCopilotData(true)
   const { bulk, bulkResult, runAll } = useBulkUpdate()
@@ -2575,6 +2613,7 @@ function CopilotSection({ t }) {
       status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, liveRunning, blocked: bundle.running || busy || ui.operation !== null }) : null),
     h(LiveBanner, { t }),
     h(AvailabilityBanners, { t, status }),
+    h(PatchAuditBanner, { t, findings: status?.patchAudit }),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
     // A pass started elsewhere (the sidebar quick button) still lands its
@@ -2820,6 +2859,7 @@ function PopupBody({ t, autoRun = false }) {
       status !== null ? h(UpdateAllButton, { t, plugins: status.plugins, bulk, runAll: onRunAll, liveRunning, blocked: bundle.running || busy || ui.operation !== null }) : null),
     h(LiveBanner, { t }),
     h(AvailabilityBanners, { t, status }),
+    h(PatchAuditBanner, { t, findings: status?.patchAudit }),
     bulkResult !== null && !bulk.running ? h('div', { className: `duc-note ${bulkResult.failed > 0 ? 'duc-error' : ''}` },
       `${t('updatedAll')}${bulkResult.failed > 0 ? ` ${t('bulkFailed', { n: bulkResult.failed })}` : ''}`) : null,
     // A pass started elsewhere (the sidebar quick button) still lands its
@@ -2920,6 +2960,8 @@ exports.__test = {
   // it and drive the shipped handlers (see test/row-update-click.test.mjs).
   pluginRowElement: (props) => h(PluginRow, props),
   coreCardElement: (props) => h(CoreCard, props),
+  patchAuditBannerElement: (props) => h(PatchAuditBanner, props),
+  updateWarningsElement: (props) => h(UpdateWarnings, props),
   autoTargetsOf,
   quickOutcome,
   loadBadgeStatus,
