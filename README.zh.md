@@ -25,17 +25,16 @@ DSH 迭代很快，插件生态同样如此。每个 profile 通过 pnpm spec �
 |---|---|
 | 🔭 **全量雷达** | 一次扫描覆盖 dsh 本体 + 官方 bundle（`dsh-base`、`dsh-web-app`）+ 所有 profile 的插件依赖 |
 | 🔄 **双通道** | npm registry 版本（完整 semver 比较，含 prerelease）+ git 上游（pinned commit vs HEAD）。`link:`/`file:` 本地目录只列出、不探测、不管理 |
-| 🧭 **更新要点** | 逐项给出：semver 跨度、风险分级（major → 高、minor → 中、patch → 低）、变更材料——npm 版本列表 / GitHub compare 提交 / Release 说明（正文内联渲染）/ 本地 `git log`；每条材料都可点击跳转（npm 版本页、提交、Release、compare 对比页），每个插件行带 ↗ 直达其仓库——monorepo 子包定位到子目录，解析不出 GitHub 仓库的 npm 插件兜底到其 npm 包页面 |
-| 🤖 **Agent 工具** | `update_copilot_scan` / `update_copilot_brief` / `update_copilot_preflight` / `update_copilot_update` / `update_copilot_core`——对 Agent 说一句「有没有更新」，得到有数据支撑的回答；扫描按包合并（一个包一行），自动推断的挂载关系只用于展示；官方包跟随 harness 安装（本体更新走 `update_copilot_core`），每个直接依赖仍按自身更新策略处理。`profile` 参数在 brief/preflight/update 上可选：不传时 brief 覆盖所有装有该包的合格 profile，preflight 逐个评估这些 profile，update 也只在那些合格 profile 中执行 |
+| 🤖 **Agent 工具** | `update_copilot_scan` / `update_copilot_preflight` / `update_copilot_update` / `update_copilot_core`——对 Agent 说一句「有没有更新」，得到有数据支撑的回答；扫描按包合并（一个包一行），自动推断的挂载关系只用于展示；官方包跟随 harness 安装（本体更新走 `update_copilot_core`），每个直接依赖仍按自身更新策略处理。`profile` 参数在 preflight/update 上可选：不传时 preflight 逐个评估所有装有该包的 profile，update 也只在那些合格 profile 中执行 |
 | 🖥 **Web 界面** | 设置旁的侧栏入口（徽章在挂载时补齐、启动扫描后刷新；可在设置中关闭徽章，还你一个安静侧栏）打开紧凑雷达弹窗，旁边就是**「⚡ 一键更新」快捷按钮**——不必打开任何视图，点击即按序更新所有落后且可自动更新的插件（运行中显示 `n/m` 进度并禁用，完成显示 ✓/✗ 反馈，失败或需重启时自动打开弹窗看明细）；弹窗与完整页面共用同一折叠布局——「DeepSeek Harness 本体」卡片默认收起，插件拆成「可更新」「已最新」两组（已最新默认折叠、点击展开），自动推断的挂载关系始终跟随父行。完整页面在 设置 → 更新助手，其中提供可选的**「每 30 分钟自动刷新」**开关（默认关闭——上游只在启动时和你的操作时被查询；开启后每 30 分钟在后台强制刷新一次，徽章与打开的雷达视图自动跟进）。插件跨 profile 合并成一行（每个已在的 profile 的当前 → 最新版本内联列出），挂载的包可在父行下展开披露，同时保留独立归属和更新操作——子项「更新」只更新子项，父项普通「更新」只更新父项，「更新 bundle」只处理过期且合格的目标（父项过期先更新父项，再按每条关系的 profile 范围更新过期的挂载子项）。点一次「更新」只在该包明确列出的合格 profile 中执行，工具栏「一键更新全部」按序跑完所有合格的落后包（在 设置 → 更新助手 勾选「点击按钮时自动更新」后，点侧栏按钮一发现有落后插件就自动开始这一轮，dsh 本体绝不参与这一自动批次）。所有变更操作共用一个 UI 操作锁；更新或刷新状态未结束时禁止刷新。更新过程通过 SSE 实时推送进度（解析依赖 / 下载中 / 重试中阶段），直接渲染成每行进度条；**更新从不静默**——无论这轮更新由谁发起（自动更新、一件更新快捷键、Agent 工具、另一个标签页），运行期间侧栏按钮的徽章会变成跳动的「更新中」圆点，弹窗和完整页面常驻「正在更新：包名（profile）…」横幅（含当前阶段 / 百分比），所有更新按钮同步禁用，更新一结束列表自动刷新；无论这轮更新由谁发起，雷达里匹配的那一行都会内联同一根实时进度条（发起行走 SSE 流，其余座位经 2 秒轮询镜像），新一轮更新开始时该行残留的上一次结果自动清除——后台静默更新不会再和前台点击撞出「更新中」报错 |
 | 🛡 **更新护栏** | 同源 POST + 显式 `confirm`、严格目标 allowlist、单并发锁、5 分钟超时；预检**硬拦截门**拒绝目标 dsh 确实会弄坏的更新（缺失 named export），显式 force 才可越过；npm/github 通道只走官方 `dsh plugin` CLI，`link:`/`file:` 本地目录与官方 `@deepseek-ai/*` 包一律拒绝——本地检出请在它自己的仓库里更新；**空包 dist-tag / husk 发布**（无入口、无 `dsh.bundle`、tarball 极小）在解析目标版本时直接跳过并拒绝安装 |
 | 🩹 **补丁名体检** | dsh 的补丁装载器对 `cordis.patch.yml` 每条记录做严格名校验，钉住的包名不存在时**整条静默跳过（含 config）**——0.1.7-rc.2 把 `dsh-llm-deepseek` 改名为 `dsh-llm-deepseek-api-key`，用户自定义模型列表无声失效，唯一信号是一行 stderr。雷达现在把每个 profile 的补丁文件对照装载器全部解析来源（依赖树、声明的 bundles、两层 node_modules、bundle 补丁行）做体检，钉住已消失名字的条目以横幅呈现，附修复方式与逐 profile 验证命令（`dsh --profile <p> --dump-config 2>&1 >/dev/null | grep "mismatch\|not found"`）；核心更新闸门还会在升级前预警「钉住的 `@deepseek-ai/*` 名字不在目标版本包集中」（附疑似新名提示），更新成功后逐 profile 跑一次 post-flight `--dump-config`，把新装载器自己的跳过行收进同一组预警 |
 | 🧯 **Host 导出检查** | 扫描第三方插件对 `@deepseek-ai/*` 的 named import，对照当前（以及本体有新版本时的目标）DSH host 包实际导出。peer 范围拦不住「范围合法、导出没了」——这种错误会在启动时整棵插件树挂掉。雷达本体卡片和插件行给出提醒，并附带可复制的 `cordis.patch.yml` 禁用片段与 `dsh plugin remove` 命令。DSH 已经起不来时，不经过 `dsh web`，直接跑 `node …/dsh-update-copilot/lib/cli.js` |
-| 🚦 **peer 范围预检预警** | 对每个插件声明的 `@deepseek-ai/*` peerDependencies，用含 prerelease 规则的 semver 对照运行中 dsh（以及本体落后时的升级目标）——`^0.1.0-rc.8` 对 `0.1.2-rc.1` 这种版本号里看不出来的坑会被点亮。预警以行徽标呈现、进简报、随更新结果返回；无法解析的范围保持沉默，预检自身的任何故障都不会阻断扫描或更新。 |
+| 🚦 **peer 范围预检预警** | 对每个插件声明的 `@deepseek-ai/*` peerDependencies，用含 prerelease 规则的 semver 对照运行中 dsh（以及本体落后时的升级目标）——`^0.1.0-rc.8` 对 `0.1.2-rc.1` 这种版本号里看不出来的坑会被点亮。预警以行徽标呈现、随更新结果返回；无法解析的范围保持沉默，预检自身的任何故障都不会阻断扫描或更新。Release 说明与提交里的破坏性变更标记同样被扫描，并入预检预警。 |
 | 🧭 **升级卡 corridor + 分层预检** | 预检输出对齐社区三层失败签名（`link-time` / `mount-time` / `run-time`，外加 `storage` / `peer` / `breaking-card`）：`layerFindings` 携带 action level、证据与修复建议。跨 host 版本会先走 oh-my-dsh 升级卡 corridor——**缺边即停**（没有 curated 卡的 hop 不会假装安全）；session 格式 V2→V3→V4 只向前迁移，跳变要求先快照。已知 run-time 契约坑（`prepareCall`、`Session.events`、`registerContinuableSetup` 等）做静态能力风险提示。 |
 | 🩹 **更新后连带体检** | 更新成功后重新体检 profile 的全部插件成员，而不只是被更新的包——pnpm 会整树重写共享依赖，没被动过的兄弟插件也可能被连累。新增的 broken/missing 行会出现在更新结果里，并标注为连带损坏。 |
 | ↩️ **更新历史与回滚** | 每次变更前，更新助手把已装版本、spec、pinned commit 和 bundle patch 原文快照进 `$DSH_HOME` 下自己的历史目录（每包保留 10 份，尽力而为）。回滚 = 以旧 target 走现有带确认的更新流程——行上有两段式回滚按钮。离线 CLI 可列出快照与手工回滚命令：`node …/lib/cli.js history [profile] [package]`。 |
-| 🌐 **完整双语** | 所有面向用户的文案——面板、弹窗、徽章、更新要点、建议、更新错误——跟随界面语言（中/英）；Agent 工具路径保留稳定英文标识 |
+| 🌐 **完整双语** | 所有面向用户的文案——面板、弹窗、徽章、更新错误——跟随界面语言（中/英）；Agent 工具路径保留稳定英文标识 |
 
 ## 安装
 
@@ -55,7 +54,7 @@ dsh plugin --profile web add github:hezhongtang/dsh-update-copilot
 
 > 「帮我看看插件有没有更新」
 
-Agent 会调用 `update_copilot_scan`，对每个落后项生成更新要点、先呈现风险，然后等你拍板。更新工具在没有 `confirm: true` 时直接拒绝执行。
+Agent 会调用 `update_copilot_scan`，对落后项跑 `update_copilot_preflight`、先呈现风险，然后等你拍板。更新工具在没有 `confirm: true` 时直接拒绝执行。
 
 ### 或者用弹窗 / 面板
 
@@ -63,14 +62,13 @@ Agent 会调用 `update_copilot_scan`，对每个落后项生成更新要点、�
 
 **更新过程全程可见**：无论由谁发起——侧栏自动更新、你点的行内更新、Agent 工具（`update_copilot_update`）、另一个浏览器标签页——弹窗没开时，侧栏按钮的徽章会变成跳动的圆点（悬停提示正在更新的包名）；弹窗或完整页面打开时，顶部常驻一条「正在更新：包名（profile）…」横幅，跟随服务端实时阶段（解析依赖 / 下载中 / 重试中）与百分比。横幅出现期间所有变更操作（行内「更新」、「更新 bundle」、「一键更新全部」）都会禁用，避免后台更新与前台的点击抢同一把锁而撞出「正在更新中，请稍候」的报错。批量跑序（「一键更新全部」「更新 bundle」）行内直接呈现队列状态：正在执行的那行显示「更新中…」与实时进度条，还没轮到的那行按钮变成**「待更新」**（悬停提示当前项完成后自动开始），已跑过的行则保持原样，避免把旧扫描的「可更新」误读成未开始；更新结束后列表自动刷新出新版本。
 
-**设置 → 更新助手** 是完整页面：本体卡片的**双模式更新**（模式切换——默认「钉版本」取雷达验证过的最新版，或选 dist-tag 通道（`latest`/`next`/`alpha`），chip 上直接标出解析后的版本号，tag 落后于当前安装时红字降级警告；可复制的钉版本命令；在可写的全局 npm 安装上还有两步确认的**「更新本体」**按钮，代跑带闸门的 `npm install -g` 并报告重启要求与回滚命令——npx 等其余形态仅展示命令）、全部已装插件跨 profile 合并成一行（每个 profile 的当前 → 最新版本内联展示）、可展开的挂载关系、内联更新要点，以及每行一个**一键「更新」**按钮。子项行的「更新」只作用于子项，父项普通「更新」只作用于父项；「更新 bundle」跳过当前目标，在父项符合条件且过期时先运行父项，再按每条关系的 profile 范围依次运行过期的已选挂载子项，并报告进度与结果。每个包都带明确的合格 profile，不会按同名依赖盲目更新全部 profile。工具栏的**「一键更新全部」**仍是独立的全局操作，按序跑合格的落后包。更新过程由 SSE 实时推送到每行进度条。更新完成后，结果报告 `dsh` 重启要求，面板显示重启横幅。
+**设置 → 更新助手** 是完整页面：本体卡片的**双模式更新**（模式切换——默认「钉版本」取雷达验证过的最新版，或选 dist-tag 通道（`latest`/`next`/`alpha`），chip 上直接标出解析后的版本号，tag 落后于当前安装时红字降级警告；可复制的钉版本命令；在可写的全局 npm 安装上还有两步确认的**「更新本体」**按钮，代跑带闸门的 `npm install -g` 并报告重启要求与回滚命令——npx 等其余形态仅展示命令）、全部已装插件跨 profile 合并成一行（每个 profile 的当前 → 最新版本内联展示）、可展开的挂载关系，以及每行一个**一键「更新」**按钮。子项行的「更新」只作用于子项，父项普通「更新」只作用于父项；「更新 bundle」跳过当前目标，在父项符合条件且过期时先运行父项，再按每条关系的 profile 范围依次运行过期的已选挂载子项，并报告进度与结果。每个包都带明确的合格 profile，不会按同名依赖盲目更新全部 profile。工具栏的**「一键更新全部」**仍是独立的全局操作，按序跑合格的落后包。更新过程由 SSE 实时推送到每行进度条。更新完成后，结果报告 `dsh` 重启要求，面板显示重启横幅。
 
 ### Agent 工具一览
 
 | 工具 | 读/写 | 用途 |
 |---|---|---|
 | `update_copilot_scan` | 读 | 全量扫描：核心 + 所有 profile，按包合并（10 分钟缓存，`force` 强制刷新） |
-| `update_copilot_brief` | 读 | 单个包的 semver 跨度、风险、变更材料与建议；可传 `profile` 限定只看一个 profile，不传则每个装有该包的 profile 都出一份 |
 | `update_copilot_update` | 写 | 执行一次**已确认**的更新——不传 `profile` 时只在该包明确列出的合格 profile 中执行；npm/github 通道走官方 `dsh plugin` CLI（瞬时失败自动重试——最多 3 次、指数退避加全抖动；版本不存在、鉴权被拒等确定性错误快速失败）。`link:`/`file:` 本地目录不由助手管理，请在它自己的 checkout 内更新。`target` 可回滚到确切的旧版本；`force: true` 覆盖预检硬拦截（仅在用户明确同意后传入） |
 | `update_copilot_preflight` | 读 | 一个包的门检决策，不触发任何变更：按 profile 给出 ok / warning / blocked，附拦截证据（目标 dsh 缺失的导出）、peer 范围预警、release notes 与 commits 的破坏性变更信号 |
 | `update_copilot_core` | 写 | 执行**已确认**的 DSH 本体更新。双模式：`mode: "pinned"`（默认）安装最新健康发布版；`mode: "tag"` + `tag: latest/next/alpha` 先把通道解析成具体版本（命令始终钉版本号），解析出降级时无 `force` 拒绝。执行前过全套闸门：升级卡片走廊、session 格式存储边界、跨全部 profile 的逐插件导出证据；`force` 仅在用户同意后覆盖，证据保留在结果里。只在可写的全局 npm 安装上执行——npx / 不可溯源的启动会返回手工命令。结果必带 `requiresRestart` 与回滚命令 |
@@ -119,7 +117,7 @@ node …/lib/cli.js history web my-plugin                                       
 
 - 每次有变更的更新都需要重启 `dsh` 才生效：结果返回 `requiresRestart: true`，面板显示重启提示。不做进程内热重载。
 - `link:`/`file:` 本地目录在雷达中列出但绝不探测、绝不更新：请在它自己的仓库内管理（git pull）。
-- GitHub API 未认证时限流 60 次/小时——更新要点会优雅降级为基础版本列表。
+- GitHub API 未认证时限流 60 次/小时——破坏性变更信号会优雅降级为无信号。
 - 裸 `git+https://` spec 只报告、不提供比较通道。
 - Host 导出检查是静态 named import：动态 `import()`、运行时才碰到的 API、以及 `import * as ns` 不会标出来。官方 `@deepseek-ai/*` 包不扫。目标版本只 pack 与 DSH 同版本线的 `@deepseek-ai/dsh-*`；pack 失败或独立版本的包（cordis、schemastery）跳过，不报假不兼容。
 - peer 范围检查覆盖常见范围写法（caret、tilde、区间、并集、通配、精确）并遵循 node-semver 的 prerelease 规则；生僻写法按「无法评估」保持沉默。历史快照尽力而为——目录不可写时只是没有回滚建议，更新本身绝不会被阻断。

@@ -1,8 +1,9 @@
-// Scan/brief integration for preflight peer-range warnings: a fake DSH_HOME
+// Scan/gate integration for preflight peer-range warnings: a fake DSH_HOME
 // with a plugin whose declared peer range excludes the target dsh host, no
 // real registry. The #5609 shape — `^0.1.2` reads fine while the upgrade
 // target 0.1.3-alpha.1 is outside it — must surface on the package-centric
-// scan row and in the brief, and stay silent when everything matches.
+// scan row, and stay silent when everything matches. The same fixture drives
+// the gate's breaking-change signal extraction.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -35,7 +36,7 @@ writeFileSync(join(home, 'profiles', 'web', 'package.json'), JSON.stringify({
 }))
 
 const { clearScanCache, scanAll } = await import('../lib/scan.js')
-const { buildBrief } = await import('../lib/advise.js')
+const { collectBreakingSignals } = await import('../lib/advise.js')
 
 test.after(() => {
   clearScanCache()
@@ -103,28 +104,14 @@ test('a satisfied peer range produces no warning field at all', async () => {
   }
 })
 
-test('brief carries the same structured warning objects', async () => {
+test('the gate collects breaking-change hits from the fetched release notes', async () => {
   const restore = mockRegistry()
   try {
-    const brief = await buildBrief('my-plugin', 'web', true)
-    assert.equal(brief.error, undefined)
-    assert.equal(brief.warnings?.length, 1)
-    assert.equal(brief.warnings[0].against, 'target')
-    assert.equal(brief.warnings[0].specifier, '@deepseek-ai/dsh')
-  } finally {
-    restore()
-  }
-})
-
-test('brief surfaces breaking-change hits from the fetched release notes', async () => {
-  const restore = mockRegistry()
-  try {
-    const brief = await buildBrief('my-plugin', 'web', true)
-    assert.equal(brief.error, undefined)
-    assert.ok(Array.isArray(brief.breaking) && brief.breaking.length > 0, 'breaking hits present')
-    assert.equal(brief.breaking[0].type, 'breaking')
-    assert.equal(brief.breaking[0].source, 'release')
-    assert.match(brief.breaking[0].line, /BREAKING CHANGE/)
+    const signals = await collectBreakingSignals('web', 'my-plugin', true)
+    assert.ok(Array.isArray(signals) && signals.length > 0, 'breaking hits present')
+    assert.equal(signals[0].type, 'breaking')
+    assert.equal(signals[0].source, 'release')
+    assert.match(signals[0].line, /BREAKING CHANGE/)
   } finally {
     restore()
   }

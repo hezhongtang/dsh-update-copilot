@@ -94,8 +94,6 @@ const zh = {
   npmPage: 'npm 包页面',
   upToDate: '已最新',
   behind: '可更新',
-  brief: '更新要点',
-  hideBrief: '收起',
   update: '更新',
   queued: '待更新',
   queuedHint: '更新正在进行，此项排队等待；当前项完成后自动开始',
@@ -113,21 +111,6 @@ const zh = {
   updateNoChange: '未检测到变化',
   updateFail: '更新失败',
   restartHint: '插件更新完成后需重启 dsh（如 dsh web）生效',
-  risk: '风险',
-  riskHigh: '高',
-  riskMedium: '中',
-  riskLow: '低',
-  riskUnknown: '未知',
-  riskNone: '无',
-  semver: '版本跨度',
-  recommendation: '建议',
-  versions: '版本列表',
-  commits: '提交',
-  releases: '发行说明',
-  compare: '对比链接',
-  aheadBy: '落后',
-  commitsUnit: '个提交',
-  noMaterial: '暂无更新要点（可能网络受限或已是最新）',
   officialNote: '官方包随 dsh 本体更新',
   logs: '操作日志',
   logsCollapse: '收起日志',
@@ -156,19 +139,6 @@ const zh = {
   progress_resolving: '解析依赖',
   progress_downloading: '下载中',
   progress_retry: '重试中',
-  semverMajor: '主版本 ×{n}',
-  semverMinor: '次版本 ×{n}',
-  semverPatch: '补丁 ×{n}',
-  recCurrent: '已是最新，无需操作。',
-  recLow: '可以放心更新：仅补丁级修复。',
-  recMedium: '通常可以更新；建议先浏览发行说明确认行为变化。',
-  recHigh: '建议暂缓：大版本跳跃，先读迁移说明与 dsh 兼容范围再决定。',
-  recLinked: '本地链接插件：确认后 copilot 会在仓库内自动执行 git pull（先暂存本地改动，拉取后恢复）。',
-  recUnknown: '无 semver 信号：阅读下面的提交 / 发行说明后再决定。',
-  noteRegistry: 'registry 暂不可达——无版本元数据',
-  noteNoFetch: '本地未 fetch origin/HEAD——在仓库内执行 git fetch 后可见提交详情',
-  noteNoFetchCompare: '本地未 fetch origin/HEAD——提交列表需先 git fetch；GitHub 对比页可直接打开',
-  noteCompareUnavailable: 'GitHub compare 不可用（限流或网络）——请手动打开对比页',
   errUpdateRunning: '已有更新在进行中，请稍候',
   errLinked: '本地链接（link:/file:）不由助手管理，请在它自身的仓库里更新（git pull）',
   errOfficial: '官方包随 dsh 本体升级，此处不执行',
@@ -209,8 +179,6 @@ const zh = {
   forceUpdate: '强制更新',
   confirmForce: '确认强制更新？',
   forceHint: '更新已被预检拦截；证据见下（可复制的停用补丁 / 卸载命令）',
-  breakingBadge: '破坏性变更',
-  breakingHint: '以下行命中破坏性变更标记（启发式，仅供参考）',
   peerWarnBadge: 'peer 范围不匹配',
   peerWarnDetail: '{specifier} 声明 {range}，不包含{role} dsh {version}',
   peerRoleCurrent: '当前',
@@ -278,8 +246,6 @@ const en = {
   npmPage: 'npm package page',
   upToDate: 'Up to date',
   behind: 'Update available',
-  brief: 'Update highlights',
-  hideBrief: 'Hide',
   update: 'Update',
   queued: 'Queued',
   queuedHint: 'An update is running — this item is queued and starts automatically when it finishes',
@@ -297,21 +263,6 @@ const en = {
   updateNoChange: 'No change detected',
   updateFail: 'Update failed',
   restartHint: 'Restart dsh (e.g. dsh web) after plugin updates to apply them',
-  risk: 'Risk',
-  riskHigh: 'high',
-  riskMedium: 'medium',
-  riskLow: 'low',
-  riskUnknown: 'unknown',
-  riskNone: 'none',
-  semver: 'Semver jump',
-  recommendation: 'Recommendation',
-  versions: 'Versions',
-  commits: 'Commits',
-  releases: 'Release notes',
-  compare: 'Compare',
-  aheadBy: 'behind by',
-  commitsUnit: 'commits',
-  noMaterial: 'No update highlights (network-limited or already current)',
   officialNote: 'Official packages follow the dsh core',
   logs: 'Operation log',
   logsCollapse: 'Collapse log',
@@ -340,19 +291,6 @@ const en = {
   progress_resolving: 'Resolving dependencies',
   progress_downloading: 'Downloading',
   progress_retry: 'Retrying',
-  semverMajor: 'major ×{n}',
-  semverMinor: 'minor ×{n}',
-  semverPatch: 'patch ×{n}',
-  recCurrent: 'Already current — nothing to do.',
-  recLow: 'Safe to update: patch-level fixes only.',
-  recMedium: 'Usually safe to update; skim the release notes for behavior changes first.',
-  recHigh: 'Hold: major version jump. Read the migration notes, check dsh peer ranges, then decide.',
-  recLinked: 'Local linked plugin: on confirm, the copilot runs git pull in its checkout (auto-stash first, then restores your local changes).',
-  recUnknown: 'No semver signal: read the commits/release notes below, then decide.',
-  noteRegistry: 'registry unreachable — no version metadata',
-  noteNoFetch: 'origin/HEAD not fetched locally — run git fetch in the checkout for commit details',
-  noteNoFetchCompare: 'origin/HEAD not fetched locally — the commit list needs a git fetch; the compare view on GitHub is always available',
-  noteCompareUnavailable: 'GitHub compare unavailable (rate limit or network) — open the compare page manually',
   errUpdateRunning: 'Another update is already running — try again shortly',
   errLinked: 'Local link:/file: installs are not managed — update them inside their own checkout (git pull there)',
   errOfficial: 'Official packages follow the dsh core — update dsh itself',
@@ -393,8 +331,6 @@ const en = {
   forceUpdate: 'Force update',
   confirmForce: 'Confirm force update?',
   forceHint: 'The update was blocked by preflight; evidence below (copyable disable patch / uninstall command)',
-  breakingBadge: 'breaking changes',
-  breakingHint: 'Lines matching breaking-change markers (heuristic, informational)',
   peerWarnBadge: 'peer range mismatch',
   peerWarnDetail: '{specifier} declares {range}, which does not include {role} dsh {version}',
   peerRoleCurrent: 'current',
@@ -462,8 +398,6 @@ function injectStyles() {
     '.duc-progress-fill.duc-indet{width:40%!important;animation:duc-indet 1.2s ease-in-out infinite}',
     '@keyframes duc-indet{0%{margin-left:-40%}100%{margin-left:100%}}',
     '.duc-progress-label{flex:none;font-variant-numeric:tabular-nums;min-width:38px;text-align:right;opacity:.8}',
-    '.duc-brief{border-top:1px dashed rgba(127,127,127,.3);margin-top:6px;padding:8px 0 2px;display:flex;flex-direction:column;gap:6px;font-size:12.5px}',
-    '.duc-brief b{font-weight:600}',
     '.duc-list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px}',
     '.duc-list a{color:inherit}',
     '.duc-release-body{white-space:pre-wrap;word-break:break-word;opacity:.85;font-size:12px;line-height:1.5;margin-top:2px;max-height:96px;overflow:auto}',
@@ -755,12 +689,6 @@ function fmtClock(iso) {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
-function fmtDate(iso) {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  const p = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
 
 // ---------------------------------------------------------------------------
 // Settings nav icon patch.
@@ -1357,19 +1285,6 @@ function CategoryChip({ category, categories }) {
   return h('span', { className: 'duc-chip duc-cat' }, label)
 }
 
-function RiskChip({ t, level }) {
-  const map = { high: 'riskHigh', medium: 'riskMedium', low: 'riskLow', unknown: 'riskUnknown', none: 'riskNone' }
-  return h('span', { className: `duc-badge ${level}` }, `${t('risk')}: ${t(map[level] ?? 'riskUnknown')}`)
-}
-
-function SemverSpan({ t, semver }) {
-  if (semver === null || semver === undefined) return null
-  const parts = []
-  if (semver.major > 0) parts.push(t('semverMajor', { n: semver.major }))
-  if (semver.minor > 0) parts.push(t('semverMinor', { n: semver.minor }))
-  if (semver.patch > 0) parts.push(t('semverPatch', { n: semver.patch }))
-  return h('span', { className: 'duc-chip' }, parts.length > 0 ? parts.join(' · ') : '0')
-}
 
 /**
  * Compact ↗ outlink for one row. Prefers the host-resolved repoUrl (it may
@@ -1411,30 +1326,6 @@ function RepoLink({ t, repo, repoUrl, npmName, className }) {
   return null
 }
 
-// Host briefs carry English prose (the agent path reads them directly); the
-// GUI re-synthesizes recommendation and notes from the structured fields so
-// the panel follows the UI language.
-
-function localizedRecommendation(t, brief) {
-  if (brief.updateAvailable !== true) return t('recCurrent')
-  if (brief.kind === 'linked') return t('recLinked')
-  const level = brief.risk?.level
-  if (level === 'low') return t('recLow')
-  if (level === 'medium') return t('recMedium')
-  if (level === 'high') return t('recHigh')
-  return t('recUnknown')
-}
-
-function localizedNote(t, note) {
-  if (note === null || note === undefined) return null
-  if (/^nothing to summarize/.test(note)) return null // redundant with recCurrent
-  if (/^registry unreachable/.test(note)) return t('noteRegistry')
-  if (/origin\/HEAD not fetched locally — the commit list/.test(note)) return t('noteNoFetchCompare')
-  if (/origin\/HEAD not fetched/.test(note)) return t('noteNoFetch')
-  if (/GitHub compare unavailable/.test(note)) return t('noteCompareUnavailable')
-  return note // unknown notes stay verbatim rather than silently dropped
-}
-
 const ERROR_CODE_KEYS = {
   update_running: 'errUpdateRunning',
   linked_install: 'errLinked',
@@ -1460,106 +1351,6 @@ function localizedUpdateError(t, result) {
   if (key !== undefined) return t(key)
   return `${t('errFailed')}: ${result?.error ?? ''}`
 }
-
-/**
- * One single-profile brief body: risk chip, semver span, repo link,
- * recommendation, note, and the changelog material list.
- */
-function BriefBody({ t, brief }) {
-  const m = brief.material ?? {}
-  const listItems = []
-  if (Array.isArray(m.versions) && m.versions.length > 0) {
-    const items = []
-    m.versions.forEach((v, i) => {
-      if (i > 0) items.push(' ← ')
-      items.push(v.url !== undefined && v.url !== null
-        ? h('a', { key: `v${i}`, href: v.url, target: '_blank', rel: 'noreferrer' }, v.version)
-        : v.version)
-    })
-    listItems.push(h('li', { key: 'v' },
-      h('b', null, `${t('versions')}: `),
-      items))
-  }
-  if (Array.isArray(m.commits) && m.commits.length > 0) {
-    listItems.push(h('li', { key: 'c' },
-      h('b', null, `${t('commits')}${m.aheadBy !== undefined ? ` (${t('aheadBy')} ${m.aheadBy} ${t('commitsUnit')})` : ''}: `),
-      h('ul', { className: 'duc-list' },
-        m.commits.slice(0, 10).map((c, i) => h('li', { key: i },
-          c.url ? h('a', { href: c.url, target: '_blank', rel: 'noreferrer' }, `${c.sha ?? ''} ${c.message}`) : `${c.sha ?? ''} ${c.message}`)))))
-  }
-  if (Array.isArray(m.releases) && m.releases.length > 0) {
-    listItems.push(h('li', { key: 'r' },
-      h('b', null, `${t('releases')}: `),
-      h('ul', { className: 'duc-list' },
-        m.releases.slice(0, 3).map((r, i) => {
-          const body = typeof r.body === 'string' && r.body.trim() !== '' ? r.body.trim() : null
-          return h('li', { key: i },
-            h('a', { href: r.url, target: '_blank', rel: 'noreferrer' }, r.name ?? r.tag),
-            r.publishedAt !== undefined ? ` (${fmtDate(r.publishedAt)})` : '',
-            body !== null ? h('div', { className: 'duc-release-body' }, body) : null)
-        }))))
-  }
-  if (m.compareUrl !== null && m.compareUrl !== undefined) {
-    listItems.push(h('li', { key: 'u' },
-      h('a', { href: m.compareUrl, target: '_blank', rel: 'noreferrer' }, t('compare'))))
-  }
-
-  return h('div', { className: 'duc-brief' },
-    h('div', null,
-      h(RiskChip, { t, level: brief.risk.level }), ' ', h(SemverSpan, { t, semver: brief.semver }),
-      brief.repoUrl !== null && brief.repoUrl !== undefined
-        ? h(React.Fragment, null, ' ',
-            h('a', { className: 'duc-chip duc-repolink', href: brief.repoUrl, target: '_blank', rel: 'noreferrer' },
-              `${t('repo')} ↗`))
-        : brief.npmUrl !== null && brief.npmUrl !== undefined
-          ? h(React.Fragment, null, ' ',
-              h('a', { className: 'duc-chip duc-repolink', href: brief.npmUrl, target: '_blank', rel: 'noreferrer', title: t('npmPage') },
-                'npm ↗'))
-          : null),
-    h('div', null, h('b', null, `${t('recommendation')}: `), localizedRecommendation(t, brief)),
-    Array.isArray(brief.breaking) && brief.breaking.length > 0 ? h('div', { className: 'duc-compat' },
-      h('div', { className: 'duc-note duc-error' }, `${t('breakingBadge')} — ${t('breakingHint')}`),
-      brief.breaking.map((finding, index) => h('div', { key: `${finding.source}:${index}`, className: 'duc-note' }, finding.line))) : null,
-    Array.isArray(brief.warnings) && brief.warnings.length > 0 ? h(PeerWarningDetails, { t, findings: brief.warnings }) : null,
-    localizedNote(t, m.note) !== null ? h('div', { className: 'duc-note' }, localizedNote(t, m.note)) : null,
-    listItems.length > 0
-      ? h('ul', { className: 'duc-list' }, listItems)
-      : h('div', { className: 'duc-note' }, t('noMaterial')))
-}
-
-/**
- * Update highlights for one package. The package-centric server answers an
- * aggregated brief (`{ name, items: [...] }`) when no profile is given — one
- * section per profile that has the package installed; the single-profile
- * shape is still accepted for robustness.
- */
-function BriefPanel({ t, name }) {
-  const [brief, setBrief] = useState(null)
-  const [error, setError] = useState(null)
-  useEffect(() => {
-    let cancelled = false
-    api(`/dsh-update-copilot/brief?name=${encodeURIComponent(name)}`)
-      .then((data) => { if (!cancelled) setBrief(data) })
-      .catch((e) => { if (!cancelled) setError(String(e.message ?? e)) })
-    return () => { cancelled = true }
-  }, [name])
-
-  if (error !== null) return h('div', { className: 'duc-brief duc-error' }, `${t('loadFail')}: ${error}`)
-  if (brief === null) return h('div', { className: 'duc-brief' }, t('loading'))
-  if (brief.error !== undefined) return h('div', { className: 'duc-brief duc-error' }, brief.error)
-
-  if (Array.isArray(brief.items) && brief.items.length > 0) {
-    return h('div', { className: 'duc-brief', style: { gap: '10px' } },
-      brief.items.map((b) => h('div', { key: b.profile, style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-        h('div', { className: 'duc-card-title' }, b.profile),
-        h(BriefBody, { t, brief: b }))))
-  }
-  return h(BriefBody, { t, brief })
-}
-
-// Visual-test hook: set once by the `&brief=1` URL parameter — behind rows
-// then start with their update highlights already expanded (screenshot-visible).
-let autoBrief = false
 
 const KIND_KEYS = { npm: 'kindNpm', github: 'kindGithub', linked: 'kindLinked', file: 'kindFile', git: 'kindGit', other: 'kindOther' }
 
@@ -1742,7 +1533,6 @@ function mountRelationshipInfo(row) {
 
 function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refreshing = false, mountedChildren = [], onRunBundle }) {
   const ui = useUi()
-  const [open, setOpen] = useState(autoBrief && row.updateAvailable === true)
   const [mountedOpen, setMountedOpen] = useState(false)
   const [rollbackConfirming, setRollbackConfirming] = useState(false)
   const [forceConfirming, setForceConfirming] = useState(false)
@@ -1883,8 +1673,6 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
         t('mounts', { names: mountInfo.mounts.map((relation) => relation.child).join(', ') })) : null,
       note !== null ? h('span', { className: 'duc-note' }, note) : null,
       h('span', { className: 'duc-actions' },
-        row.updateAvailable ? h('button', { className: 'duc-btn', onClick: () => setOpen(!open), disabled: busy },
-          open ? t('hideBrief') : t('brief')) : null,
         canUpdate ? (busy || liveForRow || bulkCurrentRow
           ? h('button', { className: 'duc-btn', disabled: true }, t('updating'))
           : queuedInBulk
@@ -1936,7 +1724,6 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
     pluginHasCompat(row) || pluginHasTargetCompat(row) ? h(CompatDetails, { t, findings: row.compat }) : null,
     rowPeerWarnings(row).length > 0 ? h(PeerWarningDetails, { t, findings: rowPeerWarnings(row) }) : null,
     availReasons ? h('div', { className: 'duc-note' }, availReasons) : null,
-    open ? h(BriefPanel, { t, name: row.name }) : null,
     hasMounted && mountedOpen ? h('div', { className: 'duc-mounted-group' },
       mountedChildren.map((child) => h(PluginRow, {
         t, row: child.row, categories, key: child.row.name, onUpdated, bulkRunning, refreshing,
@@ -2955,14 +2742,10 @@ exports.apply = function apply(ctx) {
   // (`&hide=1` arms it with the badge suppressed); `?duc=settings` clicks the
   // shipped settings trigger once the sidebar is up and then selects our nav
   // row, so the section page (pref row included) is screenshot-visible.
-  // Appending `&brief=1` to `?duc=1` or `?duc=settings` starts every behind
-  // row with its update highlights expanded, so highlight-panel changes are
-  // screenshot-visible too.
   ctx.effect(() => {
     try {
       const params = new URLSearchParams(window.location.search)
       const mode = params.get('duc')
-      if (params.get('brief') === '1') autoBrief = true
       if (mode === '1') {
         setUi({ open: true })
       } else if (mode === 'badge') {

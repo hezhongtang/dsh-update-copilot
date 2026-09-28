@@ -106,19 +106,6 @@ test('scanAll records unreachable sources when the registry is down', async () =
   }
 })
 
-test('buildBrief mentions availability issues on the target package', async () => {
-  const restore = mockRegistry()
-  try {
-    const { buildBrief } = await import('../lib/advise.js')
-    const brief = await buildBrief('broken-entry', 'web', true)
-    assert.equal(brief.availability?.state, 'broken')
-    assert.match(brief.availabilityNote, /broken/)
-    assert.match(brief.recommendation, /broken/)
-  } finally {
-    restore()
-  }
-})
-
 test('aggregateRows exposes the worst availability across profiles', () => {
   const plugins = aggregateRows([
     {
