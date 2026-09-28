@@ -1,7 +1,7 @@
 {
   "name": "dsh-update-copilot",
-  "version": "0.10.1",
-  "description": "Update copilot for DeepSeek Harness: full version radar over the DSH core, shipped bundles, and every installed plugin (npm + git channels, merged package-centric across profiles); gated one-click plugin updates, dual-mode core updates (pinned or dist-tag) behind the full compatibility gate, patch-name audits with post-flight probes, history & rollback. · DSH 更新助手：本体/bundle/插件全量雷达（npm+git 双通道，跨 profile 按包合并）；插件更新带预检闸门，本体双模式代执行（钉版本/dist-tag + 全套兼容闸门），补丁名体检与更新后探测，历史快照与回滚。",
+  "version": "0.11.0",
+  "description": "Update copilot for DeepSeek Harness: full version radar over the DSH core, shipped bundles, and every installed plugin (merged package-centric across profiles); gated one-click plugin updates behind the full compatibility gate, a single pinned core update execution, patch-name audits with post-flight probes, history & rollback. · DSH 更新助手：本体/bundle/插件全量雷达（跨 profile 按包合并）；插件更新带预检闸门一键执行，本体始终钉最新健康版本代执行（全套兼容闸门），补丁名体检与更新后探测，历史快照与回滚。",
   "keywords": [
     "dsh-plugin",
     "deepseek-harness",
@@ -11,7 +11,6 @@
     "dependency-updates",
     "version-radar",
     "semver",
-    "changelog",
     "agent-tools",
     "cordis-plugin",
     "preflight",
