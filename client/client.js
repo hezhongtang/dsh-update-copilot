@@ -54,11 +54,8 @@ const zh = {
   coreBehind: '有新版本',
   copyCmd: '复制升级命令',
   copied: '已复制',
-  coreModePinned: '钉版本',
-  coreModeTag: '{tag}（→ {v}）',
-  coreTagDown: '降级',
   coreTagSame: '相同',
-  coreDowngradeWarn: '注意：{tag} 此刻解析到 {v}，比当前安装的 {cur} 更旧 —— 这是一条降级路径，确认后才会执行。',
+  coreDowngradeWarn: '注意：目标版本 {v} 比当前安装的 {cur} 更旧 —— 这是一条降级路径，确认后才会执行。',
   coreUpdate: '更新本体',
   coreConfirm: '确认执行？',
   coreConfirmDown: '确认降级？',
@@ -206,11 +203,8 @@ const en = {
   coreBehind: 'New version',
   copyCmd: 'Copy upgrade command',
   copied: 'Copied',
-  coreModePinned: 'Pinned',
-  coreModeTag: '{tag} (→ {v})',
-  coreTagDown: 'downgrade',
   coreTagSame: 'same',
-  coreDowngradeWarn: 'Careful: {tag} currently resolves to {v}, OLDER than the installed {cur} — this is a downgrade path and runs only after confirmation.',
+  coreDowngradeWarn: 'Careful: the target {v} is OLDER than the installed {cur} — this is a downgrade path and runs only after confirmation.',
   coreUpdate: 'Update core',
   coreConfirm: 'Run it?',
   coreConfirmDown: 'Confirm downgrade?',
@@ -657,26 +651,6 @@ async function streamCoreUpdate(body, onEvent) {
     cache: 'no-store',
   })
   return consumeUpdateResponse(res, onEvent)
-}
-
-/**
- * Dual-mode target choices for the core card, pure over the scan payload:
- * the pinned newest version first, then one chip per dist-tag channel with
- * its server-computed relation to the installed version. Exported through
- * __test.
- */
-function coreTargetChoices(core) {
-  const coreRow = core?.packages?.[0]
-  const current = typeof coreRow?.current === 'string' ? coreRow.current : null
-  const choices = []
-  if (typeof coreRow?.latest === 'string' && coreRow.latest !== '') {
-    choices.push({ key: 'pinned', kind: 'pinned', tag: null, version: coreRow.latest, relation: coreRow.updateAvailable ? 'upgrade' : (current !== null && coreRow.latest === current ? 'same' : 'downgrade') })
-  }
-  for (const row of core?.tags ?? []) {
-    if (typeof row?.tag !== 'string' || typeof row?.version !== 'string') continue
-    choices.push({ key: row.tag, kind: 'tag', tag: row.tag, version: row.version, relation: row.relation ?? 'upgrade' })
-  }
-  return choices
 }
 
 // The wire format is ISO-8601 UTC (toISOString on the host); render through
@@ -1770,8 +1744,6 @@ function CoreCard({ t, core, compat, onUpdated }) {
     try { return localStorage.getItem(NS_CORE_FOLDED) !== '0' } catch { return true }
   })
   const [copied, setCopied] = useState(false)
-  // Dual-mode selection: 'pinned' (default) or a dist-tag channel key.
-  const [mode, setMode] = useState('pinned')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
   const [progress, setProgress] = useState(null)
@@ -1782,14 +1754,22 @@ function CoreCard({ t, core, compat, onUpdated }) {
   const coreRow = core.packages[0]
   const summary = compatSummary(compat)
   const install = core.install ?? { method: 'unknown', writable: false, prefix: null }
-  const choices = coreTargetChoices(core)
-  const selected = choices.find((c) => c.key === mode) ?? choices[0] ?? null
+  // Single target: the newest healthy published version (the server's own
+  // line — never a dist-tag string).
+  const target = coreRow !== undefined && typeof coreRow.latest === 'string' && coreRow.latest !== ''
+    ? {
+        version: coreRow.latest,
+        relation: coreRow.updateAvailable === true
+          ? 'upgrade'
+          : (typeof coreRow.current === 'string' && coreRow.latest === coreRow.current ? 'same' : 'downgrade'),
+      }
+    : null
   const actionsDisabled = busy || liveRunning
   // Execution needs a moving target, a global npm install, and write access
   // to its prefix — every other shape stays copy-only (the server re-checks).
-  const executable = selected !== null && selected.relation !== 'same'
+  const executable = target !== null && target.relation !== 'same'
     && install.method === 'global' && install.writable === true
-  const command = selected !== null ? `npm install -g @deepseek-ai/dsh@${selected.version}` : null
+  const command = target !== null ? `npm install -g @deepseek-ai/dsh@${target.version}` : null
 
   function toggleCollapsed() {
     const next = !collapsed
@@ -1802,18 +1782,16 @@ function CoreCard({ t, core, compat, onUpdated }) {
     setTimeout(() => setCopied(false), 1500)
   }
   async function runCore(force = false) {
-    if (selected === null) return
+    if (target === null) return
     if (!acquireMutation('core')) return
     setBusy(true)
     setResult(null)
     setProgress({ percent: null, phase: 'start' })
     try {
       const outcome = await streamCoreUpdate({
-        mode: selected.kind === 'tag' ? 'tag' : 'pinned',
-        ...(selected.kind === 'tag' ? { tag: selected.tag } : {}),
         // A deliberately chosen downgrade IS the intent: its second (red)
         // confirm click rides force. Gate overrides use their own button.
-        ...(selected.relation === 'downgrade' || force === true ? { force: true } : {}),
+        ...(target.relation === 'downgrade' || force === true ? { force: true } : {}),
       }, (event) => {
         if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
         else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
@@ -1860,29 +1838,18 @@ function CoreCard({ t, core, compat, onUpdated }) {
       h('span', { className: `duc-badge ${p.updateAvailable ? 'behind' : (p.reached === false ? 'unknown' : 'ok')}` },
         p.updateAvailable ? t('coreBehind') : (p.reached === false ? t('cannotCheck') : t('coreCurrent'))))),
     !collapsed ? h('div', { className: 'duc-note' }, t('corePolicy')) : null,
-    !collapsed && selected !== null && command !== null ? h('div', null,
-      h('div', { className: 'duc-actions', style: { flexWrap: 'wrap' } },
-        choices.map((choice) => h('button', {
-          key: choice.key,
-          type: 'button',
-          className: `duc-btn${choice.key === selected.key ? ' primary' : ''}`,
-          onClick: () => { setMode(choice.key); setConfirming(false); setForceConfirming(false) },
-          title: `@deepseek-ai/dsh@${choice.version}`,
-        }, choice.kind === 'pinned'
-          ? `${t('coreModePinned')} ${shortVer(choice.version)}`
-          : `${t('coreModeTag', { tag: choice.tag, v: shortVer(choice.version) })}${choice.relation === 'downgrade' ? ` · ${t('coreTagDown')}` : (choice.relation === 'same' ? ` · ${t('coreTagSame')}` : '')}`)),
-      selected.relation === 'downgrade' ? h('div', { className: 'duc-banner warn' },
+    !collapsed && target !== null && command !== null ? h('div', null,
+      target.relation === 'downgrade' ? h('div', { className: 'duc-banner warn' },
         t('coreDowngradeWarn', {
-          tag: selected.kind === 'tag' ? selected.tag : t('coreModePinned'),
-          v: selected.version,
+          v: target.version,
           cur: coreRow?.current ?? '—',
         })) : null,
-      selected.relation === 'same' ? h('div', { className: 'duc-note' }, t('coreTagSame')) : null,
-      h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+      target.relation === 'same' ? h('div', { className: 'duc-note' }, t('coreTagSame')) : null,
+      !executable ? h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
         h('code', { className: 'duc-cmd', style: { flex: 1 } }, command),
-        h('button', { className: 'duc-btn', onClick: () => copyCmd(command) }, copied ? t('copied') : t('copyCmd'))),
-      !executable ? h('div', { className: 'duc-note' },
-        selected.relation === 'same' ? null : t(install.method !== 'global' ? 'coreNoExec' : 'coreNotWritable', { method: install.method })) : h('div', { className: 'duc-actions' },
+        h('button', { className: 'duc-btn', onClick: () => copyCmd(command) }, copied ? t('copied') : t('copyCmd')),
+        h('div', { className: 'duc-note' },
+          target.relation === 'same' ? null : t(install.method !== 'global' ? 'coreNoExec' : 'coreNotWritable', { method: install.method }))) : h('div', { className: 'duc-actions' },
         busy || liveRunning
           ? h('button', { className: 'duc-btn', disabled: true, title: liveRunning ? t('liveBusy') : undefined }, t('coreUpdating'))
           : h('button', {
@@ -1891,8 +1858,8 @@ function CoreCard({ t, core, compat, onUpdated }) {
               onBlur: () => setConfirming(false),
               disabled: actionsDisabled,
             }, confirming
-              ? (selected.relation === 'downgrade' ? t('coreConfirmDown') : t('coreConfirm'))
-              : t('coreUpdate')))),
+              ? (target.relation === 'downgrade' ? t('coreConfirmDown') : t('coreConfirm'))
+              : t('coreUpdate'))),
 
       progress !== null ? h('div', { className: 'duc-progress-wrap' },
         h('div', { className: 'duc-progress' },
@@ -2696,7 +2663,6 @@ exports.__test = {
   rowPeerWarnings,
   updateWarnings,
   rollbackOfResult,
-  coreTargetChoices,
   streamCoreUpdate,
 }
 // 'slots' and 'locale' are safe to require: ui-layout (mandatory in every web

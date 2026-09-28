@@ -1,6 +1,6 @@
 // Input validation for POST /update-core — the core update route must refuse
-// malformed bodies (JSON, tag mode without a tag, empty target, missing
-// confirm) with a 400 BEFORE anything executes, exactly like POST /update.
+// malformed bodies (bad JSON, empty target, missing confirm) with a 400
+// BEFORE anything executes, exactly like POST /update.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -32,9 +32,8 @@ async function request(body) {
 test('update-core rejects malformed bodies before any mutation', async () => {
   for (const body of [
     '{',
-    JSON.stringify({ mode: 'tag', confirm: true }),                 // tag mode, no tag
-    JSON.stringify({ mode: 'tag', tag: 'latest', confirm: true, target: '' }), // empty target
-    JSON.stringify({ mode: 'pinned', tag: 'latest' }),                                // confirm missing
+    JSON.stringify({ confirm: true, target: '' }),   // empty target
+    JSON.stringify({ target: '2.0.0' }),             // confirm missing
   ]) {
     const result = await request(body)
     assert.equal(result.status, 400)

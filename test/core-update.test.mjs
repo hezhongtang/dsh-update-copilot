@@ -26,8 +26,7 @@ writeVersion('1.0.0')
 
 const globalInstall = { method: 'global', dshDir, prefix: join(home, 'lib'), globalModulesRoot: join(home, 'lib', 'node_modules'), writable: true }
 
-// Registry mock: newest 2.0.0, latest tag deliberately lagging at 0.9.0 —
-// the systemic dist-tag lag that motivates downgrade refusal.
+// Registry mock: newest 2.0.0 (the healthy line the resolver picks).
 const originalFetch = globalThis.fetch
 globalThis.fetch = async () => ({
   ok: true,
@@ -52,16 +51,16 @@ test('same-version target is a noop, not an error and not a spawn', async () => 
   assert.equal(outcome.attempts, 0)
 })
 
-test('a lagging tag resolves to a downgrade and is refused without force', async () => {
-  const outcome = await updateCore({ mode: 'tag', tag: 'latest', io: { install: globalInstall, profileScans: [] } })
+test('an explicit target older than the install is refused without force', async () => {
+  const outcome = await updateCore({ target: '0.9.0', io: { install: globalInstall, profileScans: [] } })
   assert.equal(outcome.ok, false)
   assert.equal(outcome.code, 'core_downgrade_blocked')
   assert.equal(outcome.targetVersion, '0.9.0')
   assert.equal(outcome.attempts, 0)
 })
 
-test('downgrade with force reaches the spawn (which fails deterministically here)', async () => {
-  const outcome = await updateCore({ mode: 'tag', tag: 'latest', force: true, io: {
+test('a forced downgrade reaches the spawn (which fails deterministically here)', async () => {
+  const outcome = await updateCore({ target: '0.9.0', force: true, io: {
     install: globalInstall,
     profileScans: [],
     loadTargetExports: noExports,
@@ -77,7 +76,7 @@ test('npx and untraceable installs stay report-only — no spawn, manual command
     { method: 'npx', dshDir: '/x/.npm/_npx/abc/node_modules/@deepseek-ai/dsh', writable: true, prefix: '/usr/local' },
     { method: 'unknown', dshDir: null, writable: false, prefix: null },
   ]) {
-    const outcome = await updateCore({ mode: 'pinned', io: { install, profileScans: [] } })
+    const outcome = await updateCore({ io: { install, profileScans: [] } })
     assert.equal(outcome.ok, false)
     assert.equal(outcome.code, 'core_install_unsupported')
     assert.equal(outcome.attempts, 0)
@@ -86,7 +85,7 @@ test('npx and untraceable installs stay report-only — no spawn, manual command
 })
 
 test('a non-writable global prefix refuses and hands back the manual command', async () => {
-  const outcome = await updateCore({ mode: 'pinned', io: {
+  const outcome = await updateCore({ io: {
     install: { ...globalInstall, writable: false },
     profileScans: [],
   } })
@@ -97,14 +96,14 @@ test('a non-writable global prefix refuses and hands back the manual command', a
 test('an upgrade without corridor coverage is blocked before any spawn, force keeps the evidence', async () => {
   // 1.0.0 → 2.0.0 is past every curated corridor edge (the shipped cards
   // cover the real 0.x line), so the gate must refuse deterministically.
-  const blocked = await updateCore({ mode: 'pinned', io: { install: globalInstall, profileScans: [] } })
+  const blocked = await updateCore({ io: { install: globalInstall, profileScans: [] } })
   assert.equal(blocked.ok, false)
   assert.equal(blocked.code, 'preflight_blocked')
   assert.equal(blocked.attempts, 0)
   assert.ok(Array.isArray(blocked.blockers) && blocked.blockers.length > 0)
   assert.equal(blocked.blockers[0].type, 'corridor')
 
-  const forced = await updateCore({ mode: 'pinned', force: true, io: {
+  const forced = await updateCore({ force: true, io: {
     install: globalInstall,
     profileScans: [],
     loadTargetExports: noExports,

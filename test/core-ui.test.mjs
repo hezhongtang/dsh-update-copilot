@@ -1,54 +1,14 @@
-// GUI-side dual-mode semantics (client bundle): coreTargetChoices builds the
-// mode chips from the scan payload — pinned newest first, then one chip per
-// dist-tag with its server-computed relation. The downgrade relation is the
-// load-bearing bit: it drives the red confirm and the force flag.
+// GUI-side core-card semantics (client bundle): the single newest-healthy
+// target, its relation driving the red confirm and the force flag, and the
+// copy-only degradation for non-executable installs.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { loadBundle } from './bundle-loader.mjs'
 
-const { coreTargetChoices } = loadBundle().__test
-
-test('choices: pinned newest first, then tag chips with relations', () => {
-  const core = {
-    packages: [{ current: '0.1.7-rc.2', latest: '0.2.0-rc.1', updateAvailable: true }],
-    tags: [
-      { tag: 'latest', version: '0.1.7-rc.2', relation: 'same' },
-      { tag: 'next', version: '0.2.0-rc.1', relation: 'upgrade' },
-      { tag: 'alpha', version: '0.2.0-alpha.9', relation: 'upgrade' },
-    ],
-  }
-  const choices = coreTargetChoices(core)
-  assert.equal(choices.length, 4)
-  assert.equal(choices[0].key, 'pinned')
-  assert.equal(choices[0].kind, 'pinned')
-  assert.equal(choices[0].version, '0.2.0-rc.1')
-  assert.equal(choices[0].relation, 'upgrade')
-  assert.deepEqual(
-    choices.slice(1).map((c) => [c.key, c.kind, c.relation]),
-    [['latest', 'tag', 'same'], ['next', 'tag', 'upgrade'], ['alpha', 'tag', 'upgrade']],
-  )
-})
-
-test('choices: a lagging tag chip carries the downgrade relation', () => {
-  const core = {
-    packages: [{ current: '0.1.7-rc.2', latest: '0.2.0-rc.1', updateAvailable: true }],
-    tags: [{ tag: 'latest', version: '0.1.5-rc.2', relation: 'downgrade' }],
-  }
-  const latest = coreTargetChoices(core).find((c) => c.key === 'latest')
-  assert.equal(latest.relation, 'downgrade')
-  assert.equal(latest.version, '0.1.5-rc.2')
-})
-
-test('choices: malformed scan payloads degrade to the pinned chip only', () => {
-  assert.equal(coreTargetChoices({ packages: [{ current: '1.0.0', latest: '2.0.0', updateAvailable: true }], tags: [{ tag: 'x' }] }).length, 1)
-  assert.deepEqual(coreTargetChoices(null), [])
-  assert.deepEqual(coreTargetChoices({}), [])
-})
-
 // ---------------------------------------------------------------------------
-// Render seam: the shipped CoreCard with dual-mode chips and the gated
-// execute button (the react stub's useState returns the initial state, so the
-// card renders unfolded-logic-free — we assert structure, not interactions).
+// Render seam: the shipped CoreCard with the gated execute button (the react
+// stub's useState returns the initial state, so the card renders
+// unfolded-logic-free — we assert structure, not interactions).
 // ---------------------------------------------------------------------------
 
 const { coreCardElement } = loadBundle().__test
@@ -79,11 +39,6 @@ function walk(node, visit) {
 
 const corePayload = {
   packages: [{ name: '@deepseek-ai/dsh', current: '0.1.7-rc.2', latest: '0.2.0-rc.1', updateAvailable: true }],
-  distTags: { latest: '0.1.7-rc.2', next: '0.2.0-rc.1' },
-  tags: [
-    { tag: 'latest', version: '0.1.7-rc.2', relation: 'same' },
-    { tag: 'next', version: '0.2.0-rc.1', relation: 'upgrade' },
-  ],
   install: { method: 'global', writable: true, prefix: '/opt/homebrew' },
   updateCommand: 'npm install -g @deepseek-ai/dsh@0.2.0-rc.1',
 }
@@ -96,7 +51,7 @@ function makeT() {
   }
 }
 
-test('core card renders mode chips, the pinned command, and the gated execute button', () => {
+test('core card renders the single pinned command and the gated execute button', () => {
   // Function components render by calling them (see renderRow in
   // row-update-click.test.mjs); the stub's useState returns initial state.
   const descriptor = coreCardElement({ t: makeT(), core: corePayload, compat: { current: { findings: [] }, target: null } })
@@ -107,13 +62,10 @@ test('core card renders mode chips, the pinned command, and the gated execute bu
     if (typeof node === 'string') texts.push(node)
     if (node.type === 'button') buttons.push(node)
   })
-  // Mode chips: pinned + latest + next all present.
   const flat = texts.join(' | ')
-  assert.ok(flat.includes('coreModePinned'))
+  // Current and target versions both present.
   assert.ok(flat.includes('0.1.7-rc.2'))
   assert.ok(flat.includes('0.2.0-rc.1'))
-  // The pinned command renders verbatim.
-  assert.ok(flat.includes('npm install -g @deepseek-ai/dsh@0.2.0-rc.1'))
   // The execute action exists (label key present on some button).
   assert.ok(buttons.some((b) => String(b.children?.[0] ?? '').includes('coreUpdate')))
 })

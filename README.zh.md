@@ -5,7 +5,7 @@
 [![Zero build](https://img.shields.io/badge/zero--build-no%20bundler-2EA44F?style=flat-square)](lib)
 [![GitHub stars](https://img.shields.io/github/stars/hezhongtang/dsh-update-copilot?style=flat-square&logo=github)](https://github.com/hezhongtang/dsh-update-copilot/stargazers)
 
-**[DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) 的更新助手：追踪 dsh 本体、官方 bundle 和所有已装插件——跨全部 profile 按包合并展示；插件更新带预检闸门一键执行，本体支持双模式代执行（钉版本/dist-tag，全套兼容闸门，仅限可写的全局 npm 安装），补丁名体检捕捉被 dsh 升级静默丢弃的配置。**
+**[DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) 的更新助手：追踪 dsh 本体、官方 bundle 和所有已装插件——跨全部 profile 按包合并展示；插件更新带预检闸门一键执行，本体代执行更新（始终钉最新健康版本，全套兼容闸门，仅限可写的全局 npm 安装），补丁名体检捕捉被 dsh 升级静默丢弃的配置。**
 
 <p align="center">
   <img src="assets/popup.png" width="480" alt="更新助手弹窗：「DeepSeek Harness 本体」卡片默认收起，插件跨 profile 合并进「可更新」分组（行内一键更新），「已最新」分组折叠。" />
@@ -17,7 +17,7 @@
 
 DSH 迭代很快，插件生态同样如此。每个 profile 通过 pnpm spec 安装插件——npm 版本号、GitHub commit 锁定、本地 `link:` 目录——每种通道各有各的过期方式。手动检查意味着挨个仓库跑一遍；无脑全自动升级则等于把环境交给第三方代码。
 
-这个插件走中间路线：**全部检测、汇总变更、只更新你点过的东西。** 更新就是一键——按钮和动作之间没有确认仪式，且只会作用于该包显示出的合格 profile。DSH 本体是带闸门的双模式操作（[ADR-0001](docs/adr/0001-core-update-execution.md)）：在可写的全局 npm 安装上，本体卡片可以在全套兼容闸门之后代执行更新——默认钉到雷达验证过的最新版本，也可选 dist-tag 通道（`latest`/`next`/`alpha`），tag 会先解析出具体版本、升降级方向在确认前就写明；其余安装形态（npx 等）保持「复制命令」行为，且本体绝不参与任何自动更新批次。
+这个插件走中间路线：**全部检测、汇总变更、只更新你点过的东西。** 更新就是一键——按钮和动作之间没有确认仪式，且只会作用于该包显示出的合格 profile。DSH 本体是带闸门的操作（[ADR-0001](docs/adr/0001-core-update-execution.md)）：在可写的全局 npm 安装上，本体卡片可以在全套兼容闸门之后代执行更新——始终钉到雷达验证过的最新版本（绝不执行 dist-tag 字符串），解析出降级时除非显式 force 否则拒绝。其余安装形态（npx 等）保持「复制命令」行为，且本体绝不参与任何自动更新批次。
 
 ## 功能
 
@@ -62,7 +62,7 @@ Agent 会调用 `update_copilot_scan`，对落后项跑 `update_copilot_prefligh
 
 **更新过程全程可见**：无论由谁发起——侧栏自动更新、你点的行内更新、Agent 工具（`update_copilot_update`）、另一个浏览器标签页——弹窗没开时，侧栏按钮的徽章会变成跳动的圆点（悬停提示正在更新的包名）；弹窗或完整页面打开时，顶部常驻一条「正在更新：包名（profile）…」横幅，跟随服务端实时阶段（解析依赖 / 下载中 / 重试中）与百分比。横幅出现期间所有变更操作（行内「更新」、「更新 bundle」、「一键更新全部」）都会禁用，避免后台更新与前台的点击抢同一把锁而撞出「正在更新中，请稍候」的报错。批量跑序（「一键更新全部」「更新 bundle」）行内直接呈现队列状态：正在执行的那行显示「更新中…」与实时进度条，还没轮到的那行按钮变成**「待更新」**（悬停提示当前项完成后自动开始），已跑过的行则保持原样，避免把旧扫描的「可更新」误读成未开始；更新结束后列表自动刷新出新版本。
 
-**设置 → 更新助手** 是完整页面：本体卡片的**双模式更新**（模式切换——默认「钉版本」取雷达验证过的最新版，或选 dist-tag 通道（`latest`/`next`/`alpha`），chip 上直接标出解析后的版本号，tag 落后于当前安装时红字降级警告；可复制的钉版本命令；在可写的全局 npm 安装上还有两步确认的**「更新本体」**按钮，代跑带闸门的 `npm install -g` 并报告重启要求与回滚命令——npx 等其余形态仅展示命令）、全部已装插件跨 profile 合并成一行（每个 profile 的当前 → 最新版本内联展示）、可展开的挂载关系，以及每行一个**一键「更新」**按钮。子项行的「更新」只作用于子项，父项普通「更新」只作用于父项；「更新 bundle」跳过当前目标，在父项符合条件且过期时先运行父项，再按每条关系的 profile 范围依次运行过期的已选挂载子项，并报告进度与结果。每个包都带明确的合格 profile，不会按同名依赖盲目更新全部 profile。工具栏的**「一键更新全部」**仍是独立的全局操作，按序跑合格的落后包。更新过程由 SSE 实时推送到每行进度条。更新完成后，结果报告 `dsh` 重启要求，面板显示重启横幅。
+**设置 → 更新助手** 是完整页面：本体卡片的**单一「更新本体」**操作（始终取雷达验证过的最新版、绝不执行 dist-tag 字符串；在可写的全局 npm 安装上，两步确认按钮代跑带闸门的 `npm install -g` 并报告重启要求与回滚命令——npx 等其余形态仅展示命令）、全部已装插件跨 profile 合并成一行（每个 profile 的当前 → 最新版本内联展示）、可展开的挂载关系，以及每行一个**一键「更新」**按钮。子项行的「更新」只作用于子项，父项普通「更新」只作用于父项；「更新 bundle」跳过当前目标，在父项符合条件且过期时先运行父项，再按每条关系的 profile 范围依次运行过期的已选挂载子项，并报告进度与结果。每个包都带明确的合格 profile，不会按同名依赖盲目更新全部 profile。工具栏的**「一键更新全部」**仍是独立的全局操作，按序跑合格的落后包。更新过程由 SSE 实时推送到每行进度条。更新完成后，结果报告 `dsh` 重启要求，面板显示重启横幅。
 
 ### Agent 工具一览
 
@@ -71,7 +71,7 @@ Agent 会调用 `update_copilot_scan`，对落后项跑 `update_copilot_prefligh
 | `update_copilot_scan` | 读 | 全量扫描：核心 + 所有 profile，按包合并（10 分钟缓存，`force` 强制刷新） |
 | `update_copilot_update` | 写 | 执行一次**已确认**的更新——不传 `profile` 时只在该包明确列出的合格 profile 中执行；npm/github 通道走官方 `dsh plugin` CLI（瞬时失败自动重试——最多 3 次、指数退避加全抖动；版本不存在、鉴权被拒等确定性错误快速失败）。`link:`/`file:` 本地目录不由助手管理，请在它自己的 checkout 内更新。`target` 可回滚到确切的旧版本；`force: true` 覆盖预检硬拦截（仅在用户明确同意后传入） |
 | `update_copilot_preflight` | 读 | 一个包的门检决策，不触发任何变更：按 profile 给出 ok / warning / blocked，附拦截证据（目标 dsh 缺失的导出）、peer 范围预警、release notes 与 commits 的破坏性变更信号 |
-| `update_copilot_core` | 写 | 执行**已确认**的 DSH 本体更新。双模式：`mode: "pinned"`（默认）安装最新健康发布版；`mode: "tag"` + `tag: latest/next/alpha` 先把通道解析成具体版本（命令始终钉版本号），解析出降级时无 `force` 拒绝。执行前过全套闸门：升级卡片走廊、session 格式存储边界、跨全部 profile 的逐插件导出证据；`force` 仅在用户同意后覆盖，证据保留在结果里。只在可写的全局 npm 安装上执行——npx / 不可溯源的启动会返回手工命令。结果必带 `requiresRestart` 与回滚命令 |
+| `update_copilot_core` | 写 | 执行**已确认**的 DSH 本体更新。始终以最新健康发布版为目标，先解析成具体版本（绝不执行 dist-tag 字符串），解析出降级时无 `force` 拒绝。执行前过全套闸门：升级卡片走廊、session 格式存储边界、跨全部 profile 的逐插件导出证据；`force` 仅在用户同意后覆盖，证据保留在结果里。只在可写的全局 npm 安装上执行——npx / 不可溯源的启动会返回手工命令。结果必带 `requiresRestart` 与回滚命令 |
 
 ## 工作原理
 
