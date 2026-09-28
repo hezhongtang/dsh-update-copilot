@@ -157,6 +157,36 @@ test('auditProfilePatch: flat-layer bundle rows (the shipped dsh-base shape) res
   ])
 })
 
+test('auditProfilePatch: a bundle resolved only through the running host layer is honored', () => {
+  // npm-global installs keep official bundles inside the host dsh package's
+  // own node_modules, and the flat profiles-root materialization may lag an
+  // upgrade or miss them entirely (observed on the live machine: the flat
+  // layer's contents changed between two scans). The loader reads the patch
+  // from the host's module table, so a name its rows declare must never read
+  // as stale even when no profile/flat layer carries the bundle.
+  const host = join(home, 'hostrun', 'node_modules', '@deepseek-ai', 'dsh')
+  installPackage(host, '@deepseek-ai/dsh')
+  // Nested INSIDE the dsh package's node_modules — the real npm-global shape
+  // (<prefix>/…/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-base).
+  installPackage(join(host, 'node_modules'), '@deepseek-ai/dsh-web-app', {
+    dsh: { bundle: { patch: './cordis.patch.yml' } },
+  })
+  writeFileSync(
+    join(host, 'node_modules', '@deepseek-ai', 'dsh-web-app', 'cordis.patch.yml'),
+    "- id: x\n  name: '@deepseek-ai/dsh-only-host-pkg'\n",
+  )
+  mkdirSync(join(home, 'profiles', 'hostbundle'), { recursive: true })
+  writeFileSync(join(home, 'profiles', 'hostbundle', 'cordis.patch.yml'), [
+    '- id: a',
+    "  name: '@deepseek-ai/dsh-only-host-pkg'",
+    '- id: b',
+    "  name: '@deepseek-ai/dsh-vanished'",
+  ].join('\n'))
+  assert.deepEqual(auditProfilePatch('hostbundle', {}, ['@deepseek-ai/dsh-web-app'], { hostDshDir: host }), [
+    { profile: 'hostbundle', id: 'b', pinnedName: '@deepseek-ai/dsh-vanished' },
+  ])
+})
+
 test('auditProfilePatch: a profile without a patch file yields no findings', () => {
   assert.deepEqual(auditProfilePatch('ghost', webDeps, webBundles), [])
 })
