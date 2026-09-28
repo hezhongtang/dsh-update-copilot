@@ -69,7 +69,7 @@ test('a refusing disk degrades to null instead of throwing', () => {
 
 const sha = 'a'.repeat(40)
 
-test('rollback targets: npm version, pinned github commit, linked command text', () => {
+test('rollback targets: npm version, pinned github commit, no linked target', () => {
   assert.deepEqual(
     rollbackTargetOf({ name: 'my-plugin', before: { version: '1.2.3', spec: '^1.0.0' } }),
     { channel: 'npm', target: 'my-plugin@1.2.3' },
@@ -92,9 +92,8 @@ test('rollback targets: npm version, pinned github commit, linked command text',
     rollbackTargetOf({ name: 'gh-plugin', before: { version: '0.1.0', spec: `github:owner/repo#${'b'.repeat(40)}`, commit: sha } }),
     { channel: 'github', target: `github:owner/repo#${sha}` },
   )
-  const linked = rollbackTargetOf({ name: 'dev-plugin', before: { version: '1.0.0', spec: 'link:../dev-plugin', commit: sha } })
-  assert.equal(linked.channel, 'linked')
-  assert.ok(linked.command.includes(`checkout ${sha}`))
+  // link:/file: checkouts have no re-installable target at all.
+  assert.deepEqual(rollbackTargetOf({ name: 'dev-plugin', before: { version: '1.0.0', spec: 'link:../dev-plugin', commit: sha } }), null)
   assert.deepEqual(rollbackTargetOf({ name: 'x', before: { spec: 'link:../dev', commit: null } }), null)
   assert.deepEqual(rollbackTargetOf(null), null)
   assert.deepEqual(rollbackTargetOf({ name: 'x', before: { spec: 'npm:other@^1' } }), null)

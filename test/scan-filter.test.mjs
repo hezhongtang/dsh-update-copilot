@@ -167,7 +167,7 @@ test('direct official package updates are report-only on every install channel',
   const outcome = await updatePlugin('web', '@deepseek-ai/official-addon')
   assert.equal(outcome.ok, false)
   assert.equal(outcome.code, 'official_package')
-  const linkedOutcome = await updatePlugin('web', '@deepseek-ai/official-link', {}, { source: 'remote' })
+  const linkedOutcome = await updatePlugin('web', '@deepseek-ai/official-link')
   assert.equal(linkedOutcome.ok, false)
   assert.equal(linkedOutcome.code, 'official_package')
   assert.equal(fetched, false)

@@ -52,17 +52,15 @@ test('no auto-updatable profile disables the update button row', () => {
     { profile: 'headless', plugins: [row({ kind: 'file', updateAvailable: false })] },
   ])
   assert.equal(plugins[0].canAutoUpdate, false)
-  assert.equal(plugins[0].canSwitch, false)
 })
 
-test('linked profiles are switch-capable whether behind or not', () => {
+test('linked profiles are never auto-updatable', () => {
   const plugins = aggregateRows([
-    { profile: 'web', plugins: [row({ kind: 'linked', updateAvailable: true })] },
+    { profile: 'web', plugins: [row({ kind: 'linked', updateAvailable: false })] },
     { profile: 'headless', plugins: [row({ kind: 'linked', updateAvailable: false })] },
   ])
-  assert.equal(plugins[0].canAutoUpdate, true)
-  assert.equal(plugins[0].canSwitch, true)
-  assert.equal(plugins[0].profiles.every((p) => p.canSwitch === true), true)
+  assert.equal(plugins[0].canAutoUpdate, false)
+  assert.equal(plugins[0].profiles.every((p) => p.canUpdate === false), true)
 })
 
 test('different packages stay separate and sort by name', () => {

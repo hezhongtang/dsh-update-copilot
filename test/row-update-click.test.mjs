@@ -93,7 +93,7 @@ const ROW = {
   canAutoUpdate: true,
   updatableProfiles: ['web'],
   category: 'plugin',
-  profiles: [{ profile: 'web', kind: 'npm', canSwitch: false }],
+  profiles: [{ profile: 'web', kind: 'npm' }],
 }
 
 /** Render the shipped PluginRow through the bundle's test seam. */
@@ -136,14 +136,14 @@ test('streamUpdate honours only a literal true as force', async () => {
   const { streamUpdate } = loadBundle().__test
   const fetchTap = tapFetch()
   try {
-    await streamUpdate('dshmarket', () => {}, undefined, undefined, ['web'], undefined, syntheticClickEvent())
+    await streamUpdate('dshmarket', () => {}, undefined, ['web'], undefined, syntheticClickEvent())
     assert.deepEqual(JSON.parse(fetchTap.calls.at(-1).init.body), {
       name: 'dshmarket',
       confirm: true,
       profiles: ['web'],
     }, 'a stray truthy argument must not force past the preflight gate')
 
-    await streamUpdate('dshmarket', () => {}, undefined, undefined, ['web'], undefined, true)
+    await streamUpdate('dshmarket', () => {}, undefined, ['web'], undefined, true)
     assert.deepEqual(JSON.parse(fetchTap.calls.at(-1).init.body), {
       name: 'dshmarket',
       confirm: true,

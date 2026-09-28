@@ -108,9 +108,6 @@ const zh = {
   itemFailed: '{p}：失败',
   itemSkipped: '{p}：跳过',
   confirmUpdate: '确认更新？',
-  switchRemote: '切换至远端源更新',
-  confirmSwitchRemote: '确认切换远端源？',
-  switchedRemote: '✓ 已切换到远端源，后续更新走 npm/GitHub 通道',
   updating: '更新中…',
   updated: '✓ 已更新',
   updateNoChange: '未检测到变化',
@@ -132,7 +129,6 @@ const zh = {
   commitsUnit: '个提交',
   noMaterial: '暂无更新要点（可能网络受限或已是最新）',
   officialNote: '官方包随 dsh 本体更新',
-  linkedNote: '本地开发链接，请在其仓库内 git pull',
   logs: '操作日志',
   logsCollapse: '收起日志',
   empty: '还没有任何记录',
@@ -160,9 +156,6 @@ const zh = {
   progress_resolving: '解析依赖',
   progress_downloading: '下载中',
   progress_retry: '重试中',
-  progress_stash: '暂存本地改动',
-  progress_pull: '拉取上游',
-  progress_pop: '恢复本地改动',
   semverMajor: '主版本 ×{n}',
   semverMinor: '次版本 ×{n}',
   semverPatch: '补丁 ×{n}',
@@ -177,7 +170,7 @@ const zh = {
   noteNoFetchCompare: '本地未 fetch origin/HEAD——提交列表需先 git fetch；GitHub 对比页可直接打开',
   noteCompareUnavailable: 'GitHub compare 不可用（限流或网络）——请手动打开对比页',
   errUpdateRunning: '已有更新在进行中，请稍候',
-  errLinked: '本地链接插件请在它的仓库里自行更新（git pull）',
+  errLinked: '本地链接（link:/file:）不由助手管理，请在它自身的仓库里更新（git pull）',
   errOfficial: '官方包随 dsh 本体升级，此处不执行',
   errNotInstalled: '该插件未安装在此 profile',
   errUnsafe: '目标被安全策略拒绝',
@@ -189,16 +182,6 @@ const zh = {
   errNoop: 'pnpm 跑完了，但本地没有变化；请重新扫描后再试，如果一直这样，把下方输出发来排查。',
   errLatestUnavailable: '拿不到 npm 上的最新版本，稍后再试。',
   errUnsupportedChannel: '这种安装方式暂不支持自动更新。',
-  errLinkedNoGit: '本地目录不是 git 仓库，无法自动 pull；请在其仓库内手动更新。',
-  errLinkedNoUpstream: '本地 checkout 没有配置上游分支，无法自动 pull；请先 git push -u 设置上游。',
-  errLinkedStashFailed: '暂存本地改动失败，已中止更新，未改动仓库；请手动处理未提交改动后重试。',
-  errLinkedPullFailed: 'git pull 失败，本地改动已恢复原位；请检查下方输出后重试。',
-  errLinkedMergeConflict: 'git pull 遇到合并冲突，需要手动处理：在仓库内解决冲突，或 git merge --abort 撤销后重试。',
-  errLinkedPopConflict: '拉取已成功，但恢复本地改动时冲突。请在仓库内手动解决：git stash list 查看，git stash pop 重试恢复。',
-  errLinkedTimeout: 'git pull 超时，本地改动已恢复原位；请检查网络后重试。',
-  errSwitchNoRepo: '本地仓库的 origin 不是 GitHub，无法切换远端源。',
-  errSwitchUnavailable: '既无 npm 发布，本地仓库也无可用 GitHub 上游，无法切换远端源。',
-  errSwitchSpecUnchanged: '依赖 spec 未被改写（仍是本地链接），请手动处理。',
   liveUpdating: '正在更新：{name}',
   liveUpdatingProfile: '正在更新：{name}（{profile}）',
   liveBusy: '有更新正在进行，请稍候',
@@ -222,7 +205,6 @@ const zh = {
   riskCollateral: '连带损坏（非本次更新目标，可能被共享依赖重写波及）',
   rollbackTo: '回滚到 {target}',
   rollbackConfirm: '确认回滚？',
-  rollbackLinked: '回滚（手动命令）',
   errPreflightBlocked: '已拦截：目标 dsh 不再导出该插件 import 的名字，强行更新可能让整个 profile 起不来',
   forceUpdate: '强制更新',
   confirmForce: '确认强制更新？',
@@ -310,9 +292,6 @@ const en = {
   itemFailed: '{p}: failed',
   itemSkipped: '{p}: skipped',
   confirmUpdate: 'Confirm update?',
-  switchRemote: 'Switch to remote source',
-  confirmSwitchRemote: 'Switch to remote source?',
-  switchedRemote: '✓ Switched to remote source — future updates via npm/GitHub',
   updating: 'Updating…',
   updated: '✓ Updated',
   updateNoChange: 'No change detected',
@@ -334,7 +313,6 @@ const en = {
   commitsUnit: 'commits',
   noMaterial: 'No update highlights (network-limited or already current)',
   officialNote: 'Official packages follow the dsh core',
-  linkedNote: 'Local dev link — git pull inside its checkout',
   logs: 'Operation log',
   logsCollapse: 'Collapse log',
   empty: 'Nothing recorded yet',
@@ -362,9 +340,6 @@ const en = {
   progress_resolving: 'Resolving dependencies',
   progress_downloading: 'Downloading',
   progress_retry: 'Retrying',
-  progress_stash: 'Stashing local changes',
-  progress_pull: 'Pulling upstream',
-  progress_pop: 'Restoring local changes',
   semverMajor: 'major ×{n}',
   semverMinor: 'minor ×{n}',
   semverPatch: 'patch ×{n}',
@@ -379,7 +354,7 @@ const en = {
   noteNoFetchCompare: 'origin/HEAD not fetched locally — the commit list needs a git fetch; the compare view on GitHub is always available',
   noteCompareUnavailable: 'GitHub compare unavailable (rate limit or network) — open the compare page manually',
   errUpdateRunning: 'Another update is already running — try again shortly',
-  errLinked: 'Locally linked plugins update from their own checkout (git pull there)',
+  errLinked: 'Local link:/file: installs are not managed — update them inside their own checkout (git pull there)',
   errOfficial: 'Official packages follow the dsh core — update dsh itself',
   errNotInstalled: 'Plugin is not installed in this profile',
   errUnsafe: 'Target rejected by the safety policy',
@@ -391,16 +366,6 @@ const en = {
   errNoop: 'pnpm finished but nothing changed. Re-scan and retry; if it persists, share the output below for debugging.',
   errLatestUnavailable: 'Could not resolve the latest version from npm. Try again shortly.',
   errUnsupportedChannel: 'This install channel is not auto-updatable yet.',
-  errLinkedNoGit: 'The directory is not a git checkout — update it manually from its own repo.',
-  errLinkedNoUpstream: 'The checkout has no upstream branch configured — run git push -u to set one first.',
-  errLinkedStashFailed: 'Could not stash local changes; aborted before touching the checkout. Handle the uncommitted changes and retry.',
-  errLinkedPullFailed: 'git pull failed and local changes were restored. Check the output below and retry.',
-  errLinkedMergeConflict: 'git pull stopped on a merge conflict — resolve it in the checkout, or git merge --abort to undo and retry.',
-  errLinkedPopConflict: 'The pull succeeded, but restoring your stashed local changes conflicted. Resolve manually: git stash list, then git stash pop to retry the restore.',
-  errLinkedTimeout: 'git pull timed out and local changes were restored. Check your network and retry.',
-  errSwitchNoRepo: 'The checkout\'s origin is not a GitHub remote — cannot switch to a remote source.',
-  errSwitchUnavailable: 'No npm release and no usable GitHub upstream — cannot switch to a remote source.',
-  errSwitchSpecUnchanged: 'The dependency spec was not rewritten (still a local link). Handle the switch manually.',
   liveUpdating: 'Updating: {name}',
   liveUpdatingProfile: 'Updating: {name} ({profile})',
   liveBusy: 'An update is running — please wait',
@@ -424,7 +389,6 @@ const en = {
   riskCollateral: 'collateral (not the update target — likely hit by shared-dependency rewriting)',
   rollbackTo: 'Roll back to {target}',
   rollbackConfirm: 'Confirm rollback?',
-  rollbackLinked: 'Roll back (manual command)',
   errPreflightBlocked: 'Blocked: the target dsh no longer exports names this plugin imports — forcing can brick the whole profile at boot',
   forceUpdate: 'Force update',
   confirmForce: 'Confirm force update?',
@@ -720,7 +684,7 @@ async function consumeUpdateResponse(res, onEvent) {
  * update to one profile. Throws on transport errors and on every answer shape
  * `consumeUpdateResponse` classifies as a failure.
  */
-async function streamUpdate(name, onEvent, profile = undefined, source = undefined, profiles = undefined, target = undefined, force = undefined) {
+async function streamUpdate(name, onEvent, profile = undefined, profiles = undefined, target = undefined, force = undefined) {
   const res = await fetch('/dsh-update-copilot/update', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -728,7 +692,6 @@ async function streamUpdate(name, onEvent, profile = undefined, source = undefin
       name,
       confirm: true,
       ...(profile !== undefined && profile !== '' ? { profile } : {}),
-      ...(source !== undefined ? { source } : {}),
       ...(Array.isArray(profiles) ? { profiles } : {}),
       ...(target !== undefined && target !== '' ? { target } : {}),
       // Only a literal true forces past the preflight gate; the server applies
@@ -1486,16 +1449,6 @@ const ERROR_CODE_KEYS = {
   update_noop: 'errNoop',
   latest_unavailable: 'errLatestUnavailable',
   unsupported_channel: 'errUnsupportedChannel',
-  linked_no_git: 'errLinkedNoGit',
-  linked_no_upstream: 'errLinkedNoUpstream',
-  linked_stash_failed: 'errLinkedStashFailed',
-  linked_pull_failed: 'errLinkedPullFailed',
-  linked_merge_conflict: 'errLinkedMergeConflict',
-  linked_stash_pop_conflict: 'errLinkedPopConflict',
-  linked_timeout: 'errLinkedTimeout',
-  linked_switch_no_repo: 'errSwitchNoRepo',
-  linked_switch_unavailable: 'errSwitchUnavailable',
-  linked_switch_spec_unchanged: 'errSwitchSpecUnchanged',
 }
 
 function localizedUpdateError(t, result) {
@@ -1666,9 +1619,7 @@ function UpdateResult({ t, result }) {
   }
   return h('div', { className: `duc-note ${result.ok ? '' : 'duc-error'}` },
     result.ok
-      ? (result.switched !== undefined ? t('switchedRemote')
-        : result.changed ? t('updated')
-          : t('updateNoChange'))
+      ? (result.changed ? t('updated') : t('updateNoChange'))
       : localizedUpdateError(t, result),
     h(UpdateWarnings, { t, result }),
     h(UpdateRisks, { t, result }))
@@ -1793,7 +1744,6 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
   const ui = useUi()
   const [open, setOpen] = useState(autoBrief && row.updateAvailable === true)
   const [mountedOpen, setMountedOpen] = useState(false)
-  const [switchConfirming, setSwitchConfirming] = useState(false)
   const [rollbackConfirming, setRollbackConfirming] = useState(false)
   const [forceConfirming, setForceConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -1836,9 +1786,6 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
   }, [live, busy, row.name])
 
   const canUpdate = row.canAutoUpdate === true
-  const switchProfile = row.profiles.length === 1 && row.profiles[0].canSwitch === true
-    ? row.profiles[0].profile
-    : null
   const hasMounted = mountedChildren.length > 0
   const canUpdateBundle = shouldShowBundleUpdate(row, mountedChildren)
   const mountedBehind = mountedUpdateCount(mountedChildren)
@@ -1856,37 +1803,13 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
         if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
         else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
-      }, undefined, undefined, rowUpdateTarget(row).profiles, undefined, force)
+      }, undefined, rowUpdateTarget(row).profiles, undefined, force)
       setResult(outcome)
       if (outcome.ok && outcome.changed) await onUpdated(outcome)
     } catch (e) {
       setResult({ ok: false, error: String(e.message ?? e) })
     } finally {
       setBusy(false)
-      setSwitchConfirming(false)
-      setProgress(null)
-      releaseMutation()
-    }
-  }
-
-  async function runSwitch() {
-    if (!acquireMutation('switch')) return
-    setBusy(true)
-    setResult(null)
-    setProgress({ percent: null, phase: 'start' })
-    try {
-      const outcome = await streamUpdate(row.name, (event) => {
-        if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
-        else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
-        else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
-      }, switchProfile, 'remote')
-      setResult(outcome)
-      if (outcome.ok && outcome.changed) await onUpdated(outcome)
-    } catch (e) {
-      setResult({ ok: false, error: String(e.message ?? e) })
-    } finally {
-      setBusy(false)
-      setSwitchConfirming(false)
       setProgress(null)
       releaseMutation()
     }
@@ -1903,7 +1826,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
         if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
         else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
-      }, undefined, undefined, rowUpdateTarget(row).profiles, rollbackOfResult(result).target)
+      }, undefined, rowUpdateTarget(row).profiles, rollbackOfResult(result).target)
       setResult(outcome)
       if (outcome.ok && outcome.changed) await onUpdated(outcome)
     } catch (e) {
@@ -1975,15 +1898,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
           className: 'duc-btn',
           onClick: () => onRunBundle?.(row, mountedChildren),
           disabled: actionsDisabled || liveRunning,
-        }, t('updateBundle')) : null,
-        switchProfile !== null ? (busy || liveRunning
-          ? null
-          : h('button', {
-              className: `duc-btn ${switchConfirming ? 'danger' : ''}`,
-              onClick: () => (switchConfirming ? runSwitch() : setSwitchConfirming(true)),
-              onBlur: () => setSwitchConfirming(false),
-              disabled: actionsDisabled,
-            }, switchConfirming ? t('confirmSwitchRemote') : t('switchRemote'))) : null)),
+        }, t('updateBundle')) : null)),
     shownProgress !== null ? h('div', { className: 'duc-progress-wrap' },
       h('div', { className: 'duc-progress' },
         h('div', {
@@ -2009,12 +1924,7 @@ function PluginRow({ t, row, categories, onUpdated, bulkRunning = false, refresh
         }, forceConfirming ? t('confirmForce') : t('forceUpdate')))) : null,
     (() => {
       const rollback = rollbackOfResult(result)
-      if (rollback === null || busy || liveRunning) return null
-      if (typeof rollback.command === 'string') {
-        return h('div', { className: 'duc-compat' },
-          h('div', { className: 'duc-note' }, t('rollbackLinked')),
-          h('pre', { className: 'duc-cmd' }, rollback.command))
-      }
+      if (rollback === null || busy || liveRunning || typeof rollback.target !== 'string') return null
       return h('div', { className: 'duc-actions' },
         h('button', {
           className: `duc-btn ${rollbackConfirming ? 'danger' : ''}`,
@@ -2361,7 +2271,7 @@ function useBulkUpdate() {
           setBulk(snapshot(i + 1, targets[i].name))
           publishBulkQueue(snapshot(i + 1, targets[i].name))
           try {
-            results.push({ name: targets[i].name, outcome: await streamUpdate(targets[i].name, () => {}, undefined, undefined, targets[i].profiles) })
+            results.push({ name: targets[i].name, outcome: await streamUpdate(targets[i].name, () => {}, undefined, targets[i].profiles) })
           } catch (e) {
             results.push({ name: targets[i].name, outcome: { ok: false, error: String(e.message ?? e) } })
           }
@@ -2427,7 +2337,7 @@ function useBundleUpdate() {
           setBundle(snapshot(i + 1, target.name))
           publishBulkQueue(snapshot(i + 1, target.name))
           try {
-            results.push({ ...target, outcome: await streamUpdate(target.name, () => {}, undefined, undefined, target.profiles) })
+            results.push({ ...target, outcome: await streamUpdate(target.name, () => {}, undefined, target.profiles) })
           } catch (e) {
             results.push({ ...target, outcome: { ok: false, error: String(e.message ?? e) } })
           }
