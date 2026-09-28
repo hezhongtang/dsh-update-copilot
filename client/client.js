@@ -113,7 +113,6 @@ const zh = {
   switchedRemote: '✓ 已切换到远端源，后续更新走 npm/GitHub 通道',
   updating: '更新中…',
   updated: '✓ 已更新',
-  hotReloaded: '✓ 已更新并热重载',
   updateNoChange: '未检测到变化',
   updateFail: '更新失败',
   restartHint: '插件更新完成后需重启 dsh（如 dsh web）生效',
@@ -316,7 +315,6 @@ const en = {
   switchedRemote: '✓ Switched to remote source — future updates via npm/GitHub',
   updating: 'Updating…',
   updated: '✓ Updated',
-  hotReloaded: '✓ Updated — hot reloaded',
   updateNoChange: 'No change detected',
   updateFail: 'Update failed',
   restartHint: 'Restart dsh (e.g. dsh web) after plugin updates to apply them',
@@ -1653,9 +1651,7 @@ function UpdateWarnings({ t, result }) {
 function UpdateResult({ t, result }) {
   if (result.items !== undefined && Array.isArray(result.items)) {
     return h('div', { className: `duc-note ${result.ok ? '' : 'duc-error'}` },
-      result.changed
-        ? (result.hotReloaded === true ? t('hotReloaded') : t('updated'))
-        : (result.code === 'update_noop' ? t('updateNoChange') : t('updateFail')),
+      result.changed ? t('updated') : (result.code === 'update_noop' ? t('updateNoChange') : t('updateFail')),
       h('ul', { className: 'duc-list' },
         result.items.map((item) => h('li', { key: item.profile },
           item.ok === true
@@ -1671,7 +1667,7 @@ function UpdateResult({ t, result }) {
   return h('div', { className: `duc-note ${result.ok ? '' : 'duc-error'}` },
     result.ok
       ? (result.switched !== undefined ? t('switchedRemote')
-        : result.changed ? (result.hotReloaded === true ? t('hotReloaded') : t('updated'))
+        : result.changed ? t('updated')
           : t('updateNoChange'))
       : localizedUpdateError(t, result),
     h(UpdateWarnings, { t, result }),

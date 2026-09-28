@@ -23,7 +23,7 @@ import { loadBundle } from './bundle-loader.mjs'
 const enc = (s) => new TextEncoder().encode(s)
 // SSE frame wire-format, mirrored from lib/routes.js sendSse().
 const frame = (o) => `data: ${JSON.stringify(o)}\n\n`
-const OUTCOME = { ok: true, changed: true, name: 'dshmarket', hotReloaded: true }
+const OUTCOME = { ok: true, changed: true, name: 'dshmarket' }
 
 /** SSE response that delivers `chunks` then closes. */
 function sseResponse(chunks) {

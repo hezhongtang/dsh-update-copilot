@@ -20,7 +20,7 @@ const enc = (s) => new TextEncoder().encode(s)
 // SSE frame wire-format, mirrored from lib/routes.js sendSse() — keep these in
 // sync when that helper's format changes (see also client/client.js).
 const frame = (o) => `data: ${JSON.stringify(o)}\n\n`
-const OUTCOME = { ok: true, changed: true, name: 'dshmarket', hotReloaded: true }
+const OUTCOME = { ok: true, changed: true, name: 'dshmarket' }
 
 function jsonResponse(body, status = 200) {
   const text = typeof body === 'string' ? body : JSON.stringify(body)
