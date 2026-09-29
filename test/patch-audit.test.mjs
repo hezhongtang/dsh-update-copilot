@@ -205,9 +205,6 @@ const dict = {
   patchAuditFix: 'FIX',
   patchAuditVerify: 'VERIFY',
   updateWarnings: 'WARN',
-  peerWarnDetail: '{specifier}|{range}|{version}',
-  peerRoleCurrent: 'cur',
-  peerRoleTarget: 'tgt',
 }
 const t = (key, params = {}) => {
   let s = dict[key] ?? key
@@ -265,7 +262,7 @@ test('patch audit banner stays silent without findings', () => {
   }
 })
 
-test('UpdateWarnings: message-bearing warnings render verbatim; range-bearing ones keep the peer format', () => {
+test('UpdateWarnings: message-bearing warnings render verbatim; an empty list renders nothing', () => {
   const message = renderTexts(updateWarningsElement({
     t,
     result: { warnings: [{ type: 'stale-patch', message: 'patch name mismatch: llm-deepseek' }] },
@@ -277,12 +274,6 @@ test('UpdateWarnings: message-bearing warnings render verbatim; range-bearing on
     result: { warnings: [{ type: 'breaking', line: 3, message: 'breaking line 3' }] },
   }))
   assert.ok(breaking.includes('breaking line 3'))
-
-  const peer = renderTexts(updateWarningsElement({
-    t,
-    result: { warnings: [{ type: 'peer', specifier: '@deepseek-ai/dsh', range: '^0.1.2', against: 'target', version: '0.1.7-rc.2' }] },
-  }))
-  assert.ok(peer.includes('@deepseek-ai/dsh|^0.1.2|0.1.7-rc.2'))
 
   const empty = updateWarningsElement({ t, result: { warnings: [] } })
   assert.equal(empty.type(empty.props), null)

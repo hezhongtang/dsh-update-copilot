@@ -82,9 +82,11 @@ test('a clean preflight lets the update proceed to the mutation layer', async ()
 })
 
 test('preflight warnings ride the successful update outcome unchanged', async () => {
+  // The remaining warning shape: breaking-change markers (peer-range warnings
+  // were removed in 0.12.0 — docs/adr/0003).
   const warning = {
-    type: 'peer', specifier: '@deepseek-ai/dsh', range: '^0.1.2', against: 'target', version: '0.1.3-alpha.1',
-    message: 'peer warning',
+    type: 'breaking', source: 'release', line: 'BREAKING CHANGE: removed settingsNamespace',
+    message: 'BREAKING CHANGE: removed settingsNamespace',
   }
   const outcome = await updatePlugin('web', 'p', {
     preflight: async () => ({ warnings: [warning], blockers: [], dshTarget: '0.1.3-alpha.1' }),

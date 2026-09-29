@@ -1,8 +1,8 @@
 // The preflight evaluation engine behind the update_copilot_preflight agent
 // tool (lib/update.js evaluatePreflight): read-only, per-profile decision —
-// blockers/warnings/breaking — that the tool relays as stable JSON. These
-// tests pin the decision matrix and the shapes against a fake DSH_HOME and
-// mocked upstreams; no real registry, no mutation.
+// blockers/breaking — that the tool relays as stable JSON. These tests pin
+// the decision matrix and the shapes against a fake DSH_HOME and mocked
+// upstreams; no real registry, no mutation.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -18,10 +18,10 @@ const dshDir = join(home, 'profiles', 'node_modules', '@deepseek-ai', 'dsh')
 mkdirSync(dshDir, { recursive: true })
 writeFileSync(join(dshDir, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.1.2' }))
 
-function install(profile, name, source, peer = {}) {
+function install(profile, name, source) {
   mkdirSync(join(home, 'profiles', profile, 'node_modules', name), { recursive: true })
   writeFileSync(join(home, 'profiles', profile, 'node_modules', name, 'package.json'), JSON.stringify({
-    name, version: '1.0.0', main: 'index.js', peerDependencies: peer,
+    name, version: '1.0.0', main: 'index.js',
   }))
   writeFileSync(join(home, 'profiles', profile, 'node_modules', name, 'index.js'), source)
   // Merge into the profile manifest — several installs share one profile.
@@ -34,13 +34,10 @@ function install(profile, name, source, peer = {}) {
   writeFileSync(manifestPath, JSON.stringify(manifest))
 }
 
-// risky-plugin imports a name the target host lacks (blocker) and declares a
-// peer range excluding the target (warning); clean-plugin declares no
-// @deepseek-ai peers at all — under strict prerelease rules that is the only
-// reliably quiet shape across dsh alpha lines.
+// risky-plugin imports a name the target host lacks (blocker); clean-plugin
+// is inert across every check.
 install('web', 'risky-plugin',
-  "import { settingsNamespace } from '@deepseek-ai/dsh-settings'\nexport function apply() {}",
-  { '@deepseek-ai/dsh': '^0.1.2' })
+  "import { settingsNamespace } from '@deepseek-ai/dsh-settings'\nexport function apply() {}")
 install('web', 'clean-plugin', 'export function apply() {}')
 install('headless', 'clean-plugin', 'export function apply() {}')
 
@@ -77,7 +74,6 @@ test('a plugin whose target host exports are gone reads blocked, with evidence',
     const item = result.items[0]
     assert.equal(item.decision, 'blocked')
     assert.ok(item.blockers.length > 0, 'blocker evidence present')
-    assert.ok(item.warnings.length > 0, 'peer warning rides along')
     assert.match(result.note, /force/i)
   } finally {
     restore()
@@ -90,7 +86,7 @@ test('a clean plugin across several profiles reads ok with per-profile items', a
     const result = await evaluatePreflight({ name: 'clean-plugin', loadTargetExports: loader })
     assert.equal(result.decision, 'ok')
     assert.deepEqual(result.items.map((i) => i.profile).sort(), ['headless', 'web'])
-    assert.ok(result.items.every((i) => i.decision === 'ok' && i.blockers.length === 0 && i.warnings.length === 0))
+    assert.ok(result.items.every((i) => i.decision === 'ok' && i.blockers.length === 0 && i.breaking.length === 0 && i.capability.length === 0))
   } finally {
     restore()
   }

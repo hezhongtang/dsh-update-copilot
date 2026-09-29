@@ -1,6 +1,6 @@
 {
   "name": "dsh-update-copilot",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Update copilot for DeepSeek Harness: full version radar over the DSH core, shipped bundles, and every installed plugin (merged package-centric across profiles); gated one-click plugin updates behind the full compatibility gate, a single pinned core update execution, patch-name audits with post-flight probes, history & rollback. · DSH 更新助手：本体/bundle/插件全量雷达（跨 profile 按包合并）；插件更新带预检闸门一键执行，本体始终钉最新健康版本代执行（全套兼容闸门），补丁名体检与更新后探测，历史快照与回滚。",
   "keywords": [
     "dsh-plugin",

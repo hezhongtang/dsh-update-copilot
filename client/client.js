@@ -164,10 +164,6 @@ const zh = {
   forceUpdate: '强制更新',
   confirmForce: '确认强制更新？',
   forceHint: '更新已被预检拦截；证据见下（可复制的停用补丁 / 卸载命令）',
-  peerWarnBadge: 'peer 范围不匹配',
-  peerWarnDetail: '{specifier} 声明 {range}，不包含{role} dsh {version}',
-  peerRoleCurrent: '当前',
-  peerRoleTarget: '目标',
   updateWarnings: '更新预检预警',
   patchAuditTitle: '补丁名体检：{n} 条 cordis.patch.yml 条目钉住的包名已不存在，被装载器整条静默跳过（配置一并失效）',
   patchAuditLine: '{profile} · {id} → {name}',
@@ -307,10 +303,6 @@ const en = {
   forceUpdate: 'Force update',
   confirmForce: 'Confirm force update?',
   forceHint: 'The update was blocked by preflight; evidence below (copyable disable patch / uninstall command)',
-  peerWarnBadge: 'peer range mismatch',
-  peerWarnDetail: '{specifier} declares {range}, which does not include {role} dsh {version}',
-  peerRoleCurrent: 'current',
-  peerRoleTarget: 'target',
   updateWarnings: 'Pre-flight warnings',
   patchAuditTitle: 'Patch-name check: {n} cordis.patch.yml entr(ies) pin package names that no longer exist — the loader silently skips them (config included)',
   patchAuditLine: '{profile} · {id} → {name}',
@@ -710,14 +702,6 @@ function pluginHasCompat(row) {
 function pluginHasTargetCompat(row) {
   return row !== null && typeof row === 'object' && Array.isArray(row.compat)
     && row.compat.some((finding) => finding !== null && finding.against === 'target')
-}
-
-/** Structured peer-range warnings on one package row (aggregated scan). */
-function rowPeerWarnings(row) {
-  if (row !== null && typeof row === 'object' && Array.isArray(row.peerWarnings)) {
-    return row.peerWarnings.filter((w) => w !== null && typeof w === 'object')
-  }
-  return []
 }
 
 /** Rollback suggestion carried by the last update outcome, if any. */
@@ -1185,18 +1169,10 @@ function UpdateWarnings({ t, result }) {
   if (warnings.length === 0) return null
   return h('div', { className: 'duc-compat' },
     h('div', { className: 'duc-note' }, t('updateWarnings')),
-    warnings.map((warning, index) => h('div', { key: `${warning.type ?? 'w'}:${warning.specifier ?? warning.line ?? ''}:${warning.against ?? ''}:${index}`, className: 'duc-note' },
-      // Peer-range warnings carry a structured `range` and keep their formatted
-      // line; every other shape renders its message verbatim (breaking markers
-      // already did), so new server-side warning shapes need no client change.
-      warning.range !== undefined || typeof warning.message !== 'string'
-        ? t('peerWarnDetail', {
-            specifier: warning.specifier ?? '',
-            range: warning.range ?? '',
-            role: t(warning.against === 'target' ? 'peerRoleTarget' : 'peerRoleCurrent'),
-            version: warning.version ?? '',
-          })
-        : warning.message)))
+    warnings.map((warning, index) => h('div', { key: `${warning.type ?? 'w'}:${warning.source ?? ''}:${index}`, className: 'duc-note' },
+      // Every remaining warning shape (breaking-change markers) carries a
+      // ready-made bilingual message; render it verbatim.
+      typeof warning.message === 'string' ? warning.message : JSON.stringify(warning))))
 }
 
 function UpdateResult({ t, result }) {
@@ -1472,7 +1448,6 @@ function PluginRow({ t, row, onUpdated, bulkRunning = false, refreshing = false,
       availBadge !== null ? h('span', { className: `duc-badge ${availBadge.className}` }, t(availBadge.key)) : null,
       pluginHasCompat(row) ? h('span', { className: 'duc-badge high' }, t('compatBadge')) : null,
       !pluginHasCompat(row) && pluginHasTargetCompat(row) ? h('span', { className: 'duc-badge behind' }, t('compatTargetBadge')) : null,
-      rowPeerWarnings(row).length > 0 ? h('span', { className: 'duc-badge behind', title: t('peerWarnBadge') }, t('peerWarnBadge')) : null,
       !row.updateAvailable && mountedBehind > 0 ? h('span', { className: 'duc-note' },
         t('mountedUpdates', { n: mountedBehind })) : null,
       mountInfo.mounts.length > 0 ? h('span', { className: 'duc-note' },
@@ -1528,7 +1503,6 @@ function PluginRow({ t, row, onUpdated, bulkRunning = false, refreshing = false,
         }, rollbackConfirming ? t('rollbackConfirm') : t('rollbackTo', { target: shortVer(rollback.target) })))
     })(),
     pluginHasCompat(row) || pluginHasTargetCompat(row) ? h(CompatDetails, { t, findings: row.compat }) : null,
-    rowPeerWarnings(row).length > 0 ? h(PeerWarningDetails, { t, findings: rowPeerWarnings(row) }) : null,
     availReasons ? h('div', { className: 'duc-note' }, availReasons) : null,
     hasMounted && mountedOpen ? h('div', { className: 'duc-mounted-group' },
       mountedChildren.map((child) => h(PluginRow, {
@@ -1536,19 +1510,6 @@ function PluginRow({ t, row, onUpdated, bulkRunning = false, refreshing = false,
         mountedChildren: child.children, onRunBundle,
       }))) : null,
     )
-}
-
-/** Evidence lines for one package row's peer-range warnings. */
-function PeerWarningDetails({ t, findings }) {
-  if (!Array.isArray(findings) || findings.length === 0) return null
-  return h('div', { className: 'duc-compat' },
-    findings.map((finding, index) => h('div', { key: `${finding.specifier}:${finding.against}:${index}`, className: 'duc-note' },
-      t('peerWarnDetail', {
-        specifier: finding.specifier ?? '',
-        range: finding.range ?? '',
-        role: t(finding.against === 'target' ? 'peerRoleTarget' : 'peerRoleCurrent'),
-        version: finding.version ?? '',
-      }))))
 }
 
 function CompatDetails({ t, findings }) {
@@ -2394,7 +2355,6 @@ exports.__test = {
   unreachableBanner,
   updateRisks,
   rowIsUnreachable,
-  rowPeerWarnings,
   updateWarnings,
   rollbackOfResult,
   streamCoreUpdate,
