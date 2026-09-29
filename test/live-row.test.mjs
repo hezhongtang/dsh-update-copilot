@@ -4,8 +4,9 @@
 // another tab) rendered only the global banner — the matching row showed no
 // progress, and an older failure line sat next to the fresh "updating" state.
 // The client now matches the live slot against the row (liveMatchesRow),
-// mirrors the slot's latest progress event into the row's {percent, phase}
-// rendering shape (liveRowProgress), and clears the stale row result on the
+// mirrors the slot's latest progress event into the row's rendering shape
+// (liveRowProgress — percent/phase plus the counters and byte totals the
+// detail line uses), and clears the stale row result on the
 // not-updating → updating edge (component-local wiring). These tests pin the
 // pure seam against the real shipped bundle.
 import test from 'node:test'
@@ -15,6 +16,9 @@ import { loadBundle } from './bundle-loader.mjs'
 const { liveMatchesRow, liveRowProgress } = loadBundle().__test
 
 const RUNNING = (current, progress) => ({ running: true, current, progress })
+
+// normalizeProgressEvent fills every field; null when the server omitted it.
+const SHAPE = { done: null, total: null, unit: null, package: null, at: null }
 
 test('liveMatchesRow: null / idle / mismatch / match', () => {
   assert.equal(liveMatchesRow(null, 'a'), false)
@@ -34,13 +38,23 @@ test('liveRowProgress: not running → null (no mirror)', () => {
 test('liveRowProgress: progress events carry percent + phase', () => {
   assert.deepEqual(
     liveRowProgress(RUNNING({ name: 'a' }, { type: 'progress', percent: 42, phase: 'downloading' })),
-    { percent: 42, phase: 'downloading' })
+    { percent: 42, phase: 'downloading', ...SHAPE })
   assert.deepEqual(
     liveRowProgress(RUNNING({ name: 'a' }, { type: 'progress', phase: 'resolving' })),
-    { percent: null, phase: 'resolving' })
+    { percent: null, phase: 'resolving', ...SHAPE })
+  // A non-numeric percent is not a number — indeterminate, never NaN.
   assert.deepEqual(
     liveRowProgress(RUNNING({ name: 'a' }, { type: 'progress', percent: '7', phase: 'downloading' })),
-    { percent: null, phase: 'downloading' })
+    { percent: null, phase: 'downloading', ...SHAPE })
+})
+
+test('liveRowProgress: rich byte counters pass through untouched', () => {
+  assert.deepEqual(
+    liveRowProgress(RUNNING({ name: 'a' }, {
+      type: 'progress', percent: 64, phase: 'downloading', done: 15439, total: 9270373,
+      unit: 'bytes', package: '@scope/pkg', at: 1790684409743,
+    })),
+    { percent: 64, phase: 'downloading', done: 15439, total: 9270373, unit: 'bytes', package: '@scope/pkg', at: 1790684409743 })
 })
 
 test('liveRowProgress: retry maps to the retry phase, indeterminate', () => {
@@ -50,7 +64,7 @@ test('liveRowProgress: retry maps to the retry phase, indeterminate', () => {
 })
 
 test('liveRowProgress: phase events render indeterminate with a label', () => {
-  for (const phase of ['start', 'stash', 'pull', 'pop']) {
+  for (const phase of ['start', 'waiting', 'pull', 'pop']) {
     assert.deepEqual(
       liveRowProgress(RUNNING({ name: 'a' }, { type: 'phase', phase, attempt: 1, total: 3 })),
       { percent: null, phase })

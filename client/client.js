@@ -123,7 +123,18 @@ const zh = {
   progress_waiting: '等待服务端完成…（旧版服务端，无实时进度）',
   progress_resolving: '解析依赖',
   progress_downloading: '下载中',
+  progress_linking: '链接依赖',
+  progress_done: '即将完成',
   progress_retry: '重试中',
+  progressBytes: '{done} / {total}',
+  progressPackages: '{done}/{total} 个包',
+  progressResolved: '已解析 {done} 个包',
+  progressSpeedBytes: '{speed}/s',
+  progressSpeedPackages: '{n} 个/秒',
+  progressEta: '剩余 {eta}',
+  etaSeconds: '{n} 秒',
+  etaMinutes: '{m} 分 {s} 秒',
+  etaSoon: '不到 1 秒',
   errUpdateRunning: '已有更新在进行中，请稍候',
   errLinked: '本地链接（link:/file:）不由助手管理，请在它自身的仓库里更新（git pull）',
   errOfficial: '官方包随 dsh 本体升级，此处不执行',
@@ -262,7 +273,18 @@ const en = {
   progress_waiting: 'Waiting for the server… (older server, no live progress)',
   progress_resolving: 'Resolving dependencies',
   progress_downloading: 'Downloading',
+  progress_linking: 'Linking dependencies',
+  progress_done: 'Finishing up',
   progress_retry: 'Retrying',
+  progressBytes: '{done} / {total}',
+  progressPackages: '{done}/{total} packages',
+  progressResolved: '{done} packages resolved',
+  progressSpeedBytes: '{speed}/s',
+  progressSpeedPackages: '{n} packages/s',
+  progressEta: '{eta} left',
+  etaSeconds: '{n}s',
+  etaMinutes: '{m}m {s}s',
+  etaSoon: 'less than 1s',
   errUpdateRunning: 'Another update is already running — try again shortly',
   errLinked: 'Local link:/file: installs are not managed — update them inside their own checkout (git pull there)',
   errOfficial: 'Official packages follow the dsh core — update dsh itself',
@@ -355,13 +377,18 @@ function injectStyles() {
     '.duc-badge.low{color:#2e9e5b;background:rgba(46,158,91,.1);border:1px solid rgba(46,158,91,.35)}',
     '.duc-badge.unknown,.duc-badge.none{opacity:.7;border:1px solid rgba(127,127,127,.4)}',
     '.duc-actions{margin-left:auto;display:flex;gap:6px;align-items:center}',
-    // update progress bar + status line under the row
-    '.duc-progress-wrap{display:flex;align-items:center;gap:10px;padding:4px 0 6px;font-size:12px}',
-    '.duc-progress{flex:1;height:6px;min-width:120px;border-radius:3px;background:rgba(127,127,127,.18);overflow:hidden}',
-    '.duc-progress-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#508cff,#7ab8ff);transition:width .2s ease}',
-    '.duc-progress-fill.duc-indet{width:40%!important;animation:duc-indet 1.2s ease-in-out infinite}',
-    '@keyframes duc-indet{0%{margin-left:-40%}100%{margin-left:100%}}',
-    '.duc-progress-label{flex:none;font-variant-numeric:tabular-nums;min-width:38px;text-align:right;opacity:.8}',
+    // update progress bar + status line under the row. Crisp by design: a
+    // solid accent fill on a solid track (no translucent gradient washing
+    // out over light or dark surfaces), 8px tall with 0.25s easing, and a
+    // striped sliding fill for the indeterminate phases (resolution, and
+    // any seat on an older server that streams no numbers).
+    '.duc-progress-wrap{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;padding:4px 0 6px;font-size:12px}',
+    '.duc-progress{flex:1 1 160px;height:8px;min-width:120px;border-radius:4px;background:rgba(127,127,127,.28);overflow:hidden}',
+    '.duc-progress-fill{height:100%;border-radius:4px;background:#508cff;transition:width .25s ease}',
+    '.duc-progress-fill.duc-indet{width:40%!important;background:repeating-linear-gradient(45deg,#508cff 0 8px,#7ab8ff 8px 16px);animation:duc-stripe 1s linear infinite}',
+    '@keyframes duc-stripe{from{background-position:0 0}to{background-position:32px 0}}',
+    '.duc-progress-label{flex:none;font-variant-numeric:tabular-nums;min-width:38px;text-align:right;opacity:.85}',
+    '.duc-progress-detail{flex:1 1 100%;min-width:0;font-size:11px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
     '.duc-list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px}',
     '.duc-list a{color:inherit}',
     '.duc a{color:inherit}',
@@ -874,19 +901,141 @@ function liveMatchesRow(live, name) {
 }
 
 /**
- * Normalize the slot's latest progress event into the row's {percent, phase}
- * rendering shape. The server filters raw `line` events out of the slot, so
- * only progress / retry / phase shapes arrive; anything unknown renders as an
- * indeterminate bar with no label.
+ * Normalize the slot's latest progress event into the row's rendering
+ * shape. The server filters raw `line` events out of the slot, so only
+ * progress / retry / phase shapes arrive; anything unknown renders as an
+ * indeterminate bar with no label. Rich fields (done/total/unit/package/at)
+ * pass through untouched when the server sent them — older servers simply
+ * omit them and the detail line stays empty.
  */
 function liveRowProgress(live) {
   if (!liveRunningOf(live)) return null
   const p = live.progress
   if (p === null || p === undefined || typeof p !== 'object') return { percent: null, phase: null }
-  if (p.type === 'progress') return { percent: typeof p.percent === 'number' ? p.percent : null, phase: p.phase ?? null }
+  if (p.type === 'progress') return normalizeProgressEvent(p)
   if (p.type === 'retry') return { percent: null, phase: 'retry' }
   if (p.type === 'phase') return { percent: null, phase: p.phase ?? null }
   return { percent: null, phase: null }
+}
+
+/**
+ * Normalize one server progress event into the row shape: a numeric
+ * percent when the server knows one (null → indeterminate), the phase
+ * label key suffix, and the optional counters/byte totals the detail line
+ * renders. Unknown/garbage fields degrade to null, never throw.
+ */
+function normalizeProgressEvent(p) {
+  const unit = p.unit === 'bytes' || p.unit === 'packages' ? p.unit : null
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null)
+  const normalized = {
+    percent: num(p.percent),
+    phase: typeof p.phase === 'string' && p.phase !== '' ? p.phase : null,
+    done: num(p.done),
+    total: num(p.total),
+    unit,
+    package: typeof p.package === 'string' && p.package !== '' ? p.package : null,
+    at: num(p.at),
+  }
+  return normalized
+}
+
+const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
+
+/** 9270373 → '8.8 MB' (binary multiples, one decimal above bytes). */
+function formatBytes(n) {
+  if (n === null) return '—'
+  let value = n
+  let unit = 0
+  while (value >= 1024 && unit < BYTE_UNITS.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  const digits = unit === 0 ? 0 : 1
+  return `${value.toFixed(digits)} ${BYTE_UNITS[unit]}`
+}
+
+/** 42 → '42 秒' / 95 → '1 分 35 秒' — the ETA under the bar. */
+function formatEta(seconds, t) {
+  if (seconds === null || seconds < 1) return t('etaSoon')
+  if (seconds < 60) return t('etaSeconds', { n: Math.round(seconds) })
+  const minutes = Math.floor(seconds / 60)
+  return t('etaMinutes', { m: minutes, s: Math.round(seconds % 60) })
+}
+
+/**
+ * Speed and ETA between two progress events of the same unit. The client
+ * owns the timing: the server stamps each event (`at`, epoch ms) and the
+ * delta between consecutive events is the measured rate. Returns nulls
+ * when the pair cannot carry a rate (different units, no elapsed time).
+ */
+function progressStats(progress, previous) {
+  if (progress === null || previous === null) return { speed: null, eta: null }
+  if (progress.unit === null || progress.unit !== previous.unit) return { speed: null, eta: null }
+  if (typeof progress.at !== 'number' || typeof previous.at !== 'number') return { speed: null, eta: null }
+  const elapsed = (progress.at - previous.at) / 1000
+  const moved = typeof progress.done === 'number' && typeof previous.done === 'number' ? progress.done - previous.done : null
+  if (elapsed <= 0 || moved === null || moved <= 0) return { speed: null, eta: null }
+  const speed = moved / elapsed
+  const remaining = typeof progress.total === 'number' ? Math.max(0, progress.total - progress.done) : null
+  return { speed, eta: speed > 0 && remaining !== null ? remaining / speed : null }
+}
+
+/**
+ * The detail line under the bar: counters ("8.4 MB / 9.3 MB", "8/13 个包",
+ * "已解析 12 个包"), then measured speed and ETA when a rate exists.
+ * `previous` is the prior event of the same run (null at the start).
+ */
+function progressDetail(t, progress, previous) {
+  if (progress === null || progress === undefined) return null
+  const parts = []
+  const hasTotal = typeof progress.total === 'number' && Number.isFinite(progress.total)
+  if (progress.unit === 'bytes' && typeof progress.done === 'number' && hasTotal) {
+    parts.push(t('progressBytes', { done: formatBytes(progress.done), total: formatBytes(progress.total) }))
+  } else if (progress.unit === 'packages' && typeof progress.done === 'number') {
+    parts.push(hasTotal
+      ? t('progressPackages', { done: progress.done, total: progress.total })
+      : t('progressResolved', { done: progress.done }))
+  }
+  const { speed, eta } = progressStats(progress, previous)
+  if (speed !== null) {
+    parts.push(progress.unit === 'bytes'
+      ? t('progressSpeedBytes', { speed: formatBytes(speed) })
+      : t('progressSpeedPackages', { n: Math.round(speed * 10) / 10 }))
+  }
+  if (eta !== null) parts.push(t('progressEta', { eta: formatEta(eta, t) }))
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+/**
+ * The live progress bar for one update seat: a crisp determinate bar when
+ * the server reports a percent, a striped indeterminate fill otherwise
+ * (resolution, retry, or an older server with no numbers). The label
+ * shows the percent or the phase; the detail line carries counters, speed
+ * and ETA. Accessible: role=progressbar with aria-valuenow while
+ * determinate, and the detail text exposed as aria-valuetext.
+ */
+function ProgressBar({ t, progress, previous = null }) {
+  if (progress === null || progress === undefined) return null
+  const percent = progress.percent
+  const determinate = typeof percent === 'number'
+  const detail = progressDetail(t, progress, previous)
+  const phaseLabel = t(`progress_${progress.phase ?? ''}`)
+  const label = determinate ? `${percent}%` : (progress.phase !== null && progress.phase !== undefined ? t('progressPhase', { phase: phaseLabel }) : null)
+  return h('div', { className: 'duc-progress-wrap' },
+    h('div', {
+      className: 'duc-progress',
+      role: 'progressbar',
+      'aria-valuemin': 0,
+      'aria-valuemax': 100,
+      ...(determinate ? { 'aria-valuenow': percent } : {}),
+      ...(detail !== null ? { 'aria-valuetext': detail } : {}),
+    },
+      h('div', {
+        className: determinate ? 'duc-progress-fill' : 'duc-progress-fill duc-indet',
+        style: determinate ? { width: `${percent}%` } : undefined,
+      })),
+    label !== null ? h('span', { className: 'duc-progress-label' }, label) : null,
+    detail !== null ? h('span', { className: 'duc-progress-detail' }, detail) : null)
 }
 
 // ---------------------------------------------------------------------------
@@ -1321,9 +1470,12 @@ function PluginRow({ t, row, onUpdated, bulkRunning = false, refreshing = false,
   const [forceConfirming, setForceConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
-  // Live update progress: null = idle; percent=null renders an indeterminate
-  // bar (pnpm output carries no percentage yet); phase is the latest stage.
+  // Live update progress: null = idle; the event carries percent (null →
+  // indeterminate bar), the phase, and optional counters/bytes the detail
+  // line renders. `previousProgress` is the event before it — the pair is
+  // what the speed/ETA math measures.
   const [progress, setProgress] = useState(null)
+  const previousProgress = useRef(null)
   // Cross-seat guard: while ANY update runs (auto-run, agent tools, another
   // tab), the row's own actions disable — the server serializes updates and
   // would answer the click with "another update is already running".
@@ -1346,6 +1498,11 @@ function PluginRow({ t, row, onUpdated, bulkRunning = false, refreshing = false,
   // runs (busy); the 2s-poll mirror only fills the gap for external runs.
   const liveForRow = !busy && liveMatchesRow(live, row.name)
   const shownProgress = busy ? progress : (liveForRow ? liveRowProgress(live) : null)
+  // Remember the event we rendered last so the next one can be measured
+  // against it (speed/ETA). Render-time ref write: one render of lag on
+  // the rate is invisible, and the first event simply has no previous.
+  const shownPrevious = previousProgress.current
+  previousProgress.current = shownProgress
   // Edge-triggered stale-result cleanup: an old failure line must not sit
   // next to a fresh "updating" banner when a new round for this package
   // starts elsewhere. The edge + !busy guard keeps the row's own just-written
@@ -1373,7 +1530,7 @@ function PluginRow({ t, row, onUpdated, bulkRunning = false, refreshing = false,
     setProgress({ percent: null, phase: 'start' })
     try {
       const outcome = await streamUpdate(row.name, (event) => {
-        if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
+        if (event.type === 'progress') setProgress(normalizeProgressEvent(event))
         else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
       }, undefined, rowUpdateTarget(row).profiles, undefined, force)
@@ -1396,7 +1553,7 @@ function PluginRow({ t, row, onUpdated, bulkRunning = false, refreshing = false,
     setProgress({ percent: null, phase: 'start' })
     try {
       const outcome = await streamUpdate(row.name, (event) => {
-        if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
+        if (event.type === 'progress') setProgress(normalizeProgressEvent(event))
         else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
       }, undefined, rowUpdateTarget(row).profiles, rollbackOfResult(result).target)
@@ -1468,18 +1625,7 @@ function PluginRow({ t, row, onUpdated, bulkRunning = false, refreshing = false,
           onClick: () => onRunBundle?.(row, mountedChildren),
           disabled: actionsDisabled || liveRunning,
         }, t('updateBundle')) : null)),
-    shownProgress !== null ? h('div', { className: 'duc-progress-wrap' },
-      h('div', { className: 'duc-progress' },
-        h('div', {
-          className: shownProgress.percent === null
-            ? 'duc-progress-fill duc-indet'
-            : 'duc-progress-fill',
-          style: shownProgress.percent === null ? undefined : { width: `${shownProgress.percent}%` },
-        })),
-      shownProgress.percent !== null || shownProgress.phase !== null ? h('span', { className: 'duc-progress-label' },
-        shownProgress.percent !== null
-          ? `${shownProgress.percent}%`
-          : t('progressPhase', { phase: t(`progress_${shownProgress.phase}`) })) : null) : null,
+    h(ProgressBar, { t, progress: shownProgress, previous: shownPrevious }),
     result !== null ? h(UpdateResult, { t, result }) : null,
     result !== null && result.code === 'preflight_blocked' ? h('div', { className: 'duc-compat' },
       h('div', { className: 'duc-note duc-error' }, t('forceHint')),
@@ -1540,6 +1686,7 @@ function CoreCard({ t, core, compat, onUpdated }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
   const [progress, setProgress] = useState(null)
+  const previousProgress = useRef(null)
   const [confirming, setConfirming] = useState(false)
   const [forceConfirming, setForceConfirming] = useState(false)
   const live = useLive()
@@ -1558,6 +1705,10 @@ function CoreCard({ t, core, compat, onUpdated }) {
       }
     : null
   const actionsDisabled = busy || liveRunning
+  // Previous progress event for the speed/ETA pair (one render of lag on
+  // the rate is invisible; the first event simply has no previous).
+  const coreProgressPrevious = previousProgress.current
+  previousProgress.current = progress
   // Execution needs a moving target, a global npm install, and write access
   // to its prefix — every other shape stays copy-only (the server re-checks).
   const executable = target !== null && target.relation !== 'same'
@@ -1586,7 +1737,7 @@ function CoreCard({ t, core, compat, onUpdated }) {
         // confirm click rides force. Gate overrides use their own button.
         ...(target.relation === 'downgrade' || force === true ? { force: true } : {}),
       }, (event) => {
-        if (event.type === 'progress') setProgress({ percent: event.percent, phase: event.phase })
+        if (event.type === 'progress') setProgress(normalizeProgressEvent(event))
         else if (event.type === 'retry') setProgress({ percent: null, phase: 'retry' })
         else if (event.type === 'phase' && event.phase === 'start') setProgress({ percent: null, phase: 'start' })
       })
@@ -1656,12 +1807,7 @@ function CoreCard({ t, core, compat, onUpdated }) {
               ? (target.relation === 'downgrade' ? t('coreConfirmDown') : t('coreConfirm'))
               : t('coreUpdate'))),
 
-      progress !== null ? h('div', { className: 'duc-progress-wrap' },
-        h('div', { className: 'duc-progress' },
-          h('div', {
-            className: progress.percent === null ? 'duc-progress-fill duc-indet' : 'duc-progress-fill',
-            style: progress.percent === null ? undefined : { width: `${progress.percent}%` },
-          }))) : null,
+      h(ProgressBar, { t, progress, previous: coreProgressPrevious }),
 
       result !== null ? h(UpdateResult, { t, result }) : null,
       result !== null && result.ok && result.changed ? h('div', { className: 'duc-banner warn' },
@@ -1860,6 +2006,12 @@ function LiveBanner({ t }) {
     if (typeof prog.percent === 'number') detail = ` ${prog.percent}%`
     else if (typeof prog.phase === 'string' && prog.phase !== '') {
       detail = ` ${t('progressPhase', { phase: t(`progress_${prog.phase}`) })}`
+    }
+    // Counters/bytes when the server streams them (no speed here — the
+    // banner has no previous event to measure against).
+    if (prog.type === 'progress') {
+      const counts = progressDetail(t, normalizeProgressEvent(prog), null)
+      if (counts !== null) detail += ` · ${counts}`
     }
   }
   return h('div', { className: 'duc-banner live', 'aria-live': 'polite' },
@@ -2345,6 +2497,12 @@ exports.__test = {
   mountRelationshipInfo,
   liveMatchesRow,
   liveRowProgress,
+  normalizeProgressEvent,
+  formatBytes,
+  formatEta,
+  progressStats,
+  progressDetail,
+  progressBarElement: (props) => h(ProgressBar, props),
   trapModalFocus,
   compatSummary,
   pluginHasCompat,
